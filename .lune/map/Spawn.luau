@@ -430,24 +430,38 @@ local function buildSnowField(parent: any)
 			block(fence, size, CFrame.new((a + b) / 2 + Vector3.new(0, y, 0)), Palette.Wood, { name = "Rail" })
 		end
 	end
-	-- South side opens under the field arch, north side onto the path to the bridge.
-	fenceRun(Vector3.new(x0, 0, z1), Vector3.new(-12, 0, z1))
-	fenceRun(Vector3.new(12, 0, z1), Vector3.new(x1, 0, z1))
+	-- Both short sides open onto the paths: south towards the spawn plaza, north towards the bridge.
+	fenceRun(Vector3.new(x0, 0, z1), Vector3.new(-8, 0, z1))
+	fenceRun(Vector3.new(8, 0, z1), Vector3.new(x1, 0, z1))
 	fenceRun(Vector3.new(x0, 0, z0), Vector3.new(-8, 0, z0))
 	fenceRun(Vector3.new(8, 0, z0), Vector3.new(x1, 0, z0))
 	fenceRun(Vector3.new(x0, 0, z0), Vector3.new(x0, 0, z1))
 	fenceRun(Vector3.new(x1, 0, z0), Vector3.new(x1, 0, z1))
+end
 
-	buildArch(parent, "FieldArch", z1, 0, { Palette.Wood, Palette.Trunk }, 0, "SNOW FIELD")
+-- Invisible volumes read by the client (ZoneBanner) to show which zone the player is in.
+-- Persistent so they replicate even when StreamingEnabled is on and the player is far away.
+local function buildZones(parent: any)
+	local zones = container("Model", "Zones", parent)
+	zones.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 
-	-- Invisible volume for gameplay code to detect players inside the field.
-	local zone = box(container("Folder", "Zones", parent), Vector3.new(x0, 0, z0), Vector3.new(x1, 16, z1), Palette.FieldSnow, {
-		name = "SnowField",
-		transparency = 1,
-		canCollide = false,
-		studs = false,
-	})
-	zone.CanQuery = false
+	local function zone(name: string, title: string, subtitle: string, area: Area, height: number)
+		local part = box(
+			zones,
+			Vector3.new(area.x0 * VOXEL, 0, area.z0 * VOXEL),
+			Vector3.new((area.x1 + 1) * VOXEL, height, (area.z1 + 1) * VOXEL),
+			Palette.FieldSnow,
+			{ name = name, transparency = 1, canCollide = false, studs = false }
+		)
+		part.CanQuery = false
+		part.CanTouch = false
+		part.CastShadow = false
+		part:SetAttribute("ZoneName", title)
+		part:SetAttribute("ZoneSubtitle", subtitle)
+	end
+
+	zone("Spawn", "SPAWN", "Safe zone", PLAZA, 40)
+	zone("SnowField", "SNOW FIELD", "Roll your snowball!", FIELD, 40)
 end
 
 -- Voxel sphere made of 2-stud cubes, merged into one part per row.
@@ -588,7 +602,7 @@ local function buildDecorations(parent: any, cells: Cells)
 		end
 	end
 
-	-- Hand-placed snowmen: two watching the fountain, two greeting players at the field arch.
+	-- Hand-placed snowmen: two watching the fountain, two flanking the field entrance.
 	local snowmen = {
 		{ position = Vector3.new(-40, 0, 58), lookAt = FOUNTAIN_CENTER },
 		{ position = Vector3.new(-40, 0, 86), lookAt = FOUNTAIN_CENTER },
@@ -684,6 +698,7 @@ function Spawn.build(): any
 	end
 
 	buildSnowField(model)
+	buildZones(model)
 	buildBridgeAndGate(model)
 	buildSnowballStatue(model)
 	buildDecorations(container("Folder", "Decorations", model), cells)
