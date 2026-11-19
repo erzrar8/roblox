@@ -220,7 +220,8 @@ end
 
 export type Lights = { bulbs: { Frame }, colors: { Color3 } }
 
--- A string of Christmas lights around a `size` rectangle, `inset` pixels outside its edge.
+-- A string of Christmas lights around a `size` rectangle: the wire runs `inset` pixels outside its edge
+-- and the bulbs hang outwards from it.
 function Kit.lights(parent: GuiObject, size: Vector2, inset: number, radius: number, spacing: number): Lights
 	local width, height = size.X + 2 * inset, size.Y + 2 * inset
 	local wire = Kit.make("Frame", {
@@ -238,7 +239,7 @@ function Kit.lights(parent: GuiObject, size: Vector2, inset: number, radius: num
 		local color = Kit.Colors.bulbs[#bulbs % #Kit.Colors.bulbs + 1]
 		-- The bulb hangs away from the wire: rotate the socket end onto the wire point.
 		local angle = math.rad(rotation)
-		local cx, cy = x - math.sin(angle) * 7, y + math.cos(angle) * 7
+		local cx, cy = x - math.sin(angle) * 6, y + math.cos(angle) * 6
 		local bulb = Kit.make("Frame", {
 			Name = "Bulb",
 			BorderSizePixel = 0,

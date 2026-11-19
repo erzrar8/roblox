@@ -6,6 +6,9 @@ local Kit = require(script.Parent.Kit)
 
 local UpgradesView = {}
 
+-- The window is drawn at this size (times the small-screen factor).
+UpgradesView.SCALE = 0.9
+
 local WIDTH = 480
 local HEADER_HEIGHT = 60
 local ROW_HEIGHT, ROW_GAP, ROWS_TOP = 78, 8, 84
@@ -193,7 +196,7 @@ function UpgradesView.build(gui: ScreenGui, specs: { Spec }): Refs
 	Kit.corner(window, 18)
 	Kit.stroke(window, Kit.Colors.white, 4)
 	Kit.snowCap(window, WIDTH, 3)
-	local lights = Kit.lights(window, Vector2.new(WIDTH, height), 10, 18, 26)
+	local lights = Kit.lights(window, Vector2.new(WIDTH, height), 2, 18, 26)
 
 	local headerSize = Vector2.new(WIDTH - 16, HEADER_HEIGHT)
 	local header = Kit.make("CanvasGroup", {

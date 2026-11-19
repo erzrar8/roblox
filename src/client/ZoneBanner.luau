@@ -9,8 +9,8 @@ local SHOW_TIME = 2.5
 local CARD_SIZE = Vector2.new(260, 60)
 local CORNER_RADIUS = 14
 local OUTLINE = 3
--- Just below the HUD top bar (UPGRADES / SELL), which sits at the top centre of the screen.
-local SHOWN_POSITION = UDim2.new(0.5, 0, 0, 100)
+-- Just below the UPGRADES / SELL buttons at the top centre of the screen.
+local SHOWN_POSITION = UDim2.new(0.5, 0, 0, 74)
 local HIDDEN_POSITION = UDim2.new(0.5, 0, 0, -(CARD_SIZE.Y + 10))
 
 local COLORS = {
