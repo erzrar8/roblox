@@ -3,21 +3,19 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
+local Kit = require(script.Parent.Ui.Kit)
+
 local SHOW_TIME = 2.5
 local CARD_SIZE = Vector2.new(260, 60)
 local CORNER_RADIUS = 14
 local OUTLINE = 3
--- The ScreenGui ignores the top bar inset, so this sits level with the Roblox top bar buttons.
-local SHOWN_POSITION = UDim2.new(0.5, 0, 0, 10)
+-- Just below the HUD top bar (UPGRADES / SELL), which sits at the top centre of the screen.
+local SHOWN_POSITION = UDim2.new(0.5, 0, 0, 100)
 local HIDDEN_POSITION = UDim2.new(0.5, 0, 0, -(CARD_SIZE.Y + 10))
 
-local STUD_SPACING, STUD_SIZE = 13, 8
 local COLORS = {
 	card = Color3.fromRGB(70, 146, 226),
 	outline = Color3.fromRGB(255, 255, 255),
-	studShadow = Color3.fromRGB(48, 112, 194),
-	studLight = Color3.fromRGB(126, 188, 246),
-	studDark = Color3.fromRGB(82, 156, 232),
 	subtitle = Color3.fromRGB(222, 240, 255),
 	textStroke = Color3.fromRGB(22, 52, 104),
 }
@@ -38,43 +36,7 @@ end
 
 -- Fills the whole card edge to edge; the CanvasGroup's UICorner clips the studs at the rounded corners.
 local function buildStuds(card: CanvasGroup)
-	local columns = math.ceil(CARD_SIZE.X / STUD_SPACING) + 1
-	local rows = math.ceil(CARD_SIZE.Y / STUD_SPACING) + 1
-	-- Centre the grid so the partial studs on opposite edges match.
-	local offsetX = (CARD_SIZE.X - columns * STUD_SPACING) / 2 + (STUD_SPACING - STUD_SIZE) / 2
-	local offsetY = (CARD_SIZE.Y - rows * STUD_SPACING) / 2 + (STUD_SPACING - STUD_SIZE) / 2
-
-	local studs = Instance.new("Frame")
-	studs.Name = "Studs"
-	studs.BackgroundTransparency = 1
-	studs.Size = UDim2.fromScale(1, 1)
-	studs.Parent = card
-
-	for row = 0, rows - 1 do
-		for column = 0, columns - 1 do
-			local x, y = offsetX + column * STUD_SPACING, offsetY + row * STUD_SPACING
-
-			local shadow = Instance.new("Frame")
-			shadow.BorderSizePixel = 0
-			shadow.BackgroundColor3 = COLORS.studShadow
-			shadow.Size = UDim2.fromOffset(STUD_SIZE, STUD_SIZE)
-			shadow.Position = UDim2.fromOffset(x + 1.5, y + 1.5)
-			corner(shadow, UDim.new(1, 0))
-			shadow.Parent = studs
-
-			local stud = Instance.new("Frame")
-			stud.BorderSizePixel = 0
-			stud.BackgroundColor3 = Color3.new(1, 1, 1)
-			stud.Size = UDim2.fromOffset(STUD_SIZE, STUD_SIZE)
-			stud.Position = UDim2.fromOffset(x, y)
-			corner(stud, UDim.new(1, 0))
-			local shading = Instance.new("UIGradient")
-			shading.Rotation = 45
-			shading.Color = ColorSequence.new(COLORS.studLight, COLORS.studDark)
-			shading.Parent = stud
-			stud.Parent = studs
-		end
-	end
+	Kit.studs(card, CARD_SIZE, Kit.Schemes.ice)
 end
 
 -- UIStroke draws outside its frame, so a frame inset by the stroke width keeps the outline inside
