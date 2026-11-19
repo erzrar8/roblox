@@ -8,6 +8,7 @@
 
 local roblox = require("@lune/roblox")
 local Builder = require("./Builder")
+local Village = require("./Village")
 
 local Instance = roblox.Instance
 local Vector3 = roblox.Vector3
@@ -25,7 +26,7 @@ local ISLAND_RX, ISLAND_RZ, ISLAND_CZ = 34.5, 48.5, -6
 -- Ring of snowy terraced mountains around the island, so a zoomed-out camera never sees the void.
 local MOUNTAIN_BAND = 12
 local GRID_MIN_X, GRID_MAX_X = -48, 47
-local GRID_MIN_Z, GRID_MAX_Z = -68, 56
+local GRID_MIN_Z, GRID_MAX_Z = -151, 56
 local ISLAND_BOTTOM = -12
 local CAP = 1.5
 -- Snow plain below the mountain tops, filling the view past the mountains out to the haze.
@@ -44,7 +45,9 @@ local PLAZA: Area = { x0 = -10, x1 = 9, z0 = 12, z1 = 33 }
 local FIELD: Area = { x0 = -24, x1 = 23, z0 = -46, z1 = -8 }
 local STATUE_AREA: Area = { x0 = 13, x1 = 18, z0 = 20, z1 = 25 }
 local PATH_Z0, PATH_Z1 = FIELD.z1 + 1, PLAZA.z0 - 1
-local CANYON_START, CANYON_END = -54, -62
+-- The canyon runs from the snow field past the Zone 1 gate (GATE_Z) into the Elf Village.
+local CANYON_START, CANYON_END = -54, -77
+local GATE_Z = -62
 
 -- Layout, in studs.
 local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 92)
@@ -81,7 +84,7 @@ local function isCorridor(x: number, z: number): boolean
 	return x >= -3 and x <= 2 and z < FIELD.z0
 end
 
--- Flat pass cut through the mountains up to the Zone 1 gate; mountains close it off behind the gate.
+-- Flat pass cut through the mountains, through the Zone 1 gate and on into the Elf Village.
 local function isCanyon(x: number, z: number): boolean
 	return x >= -4 and x <= 3 and z < FIELD.z0 and z >= CANYON_END
 end
@@ -94,10 +97,11 @@ local function islandDistance(x: number, z: number, grow: number?): number
 	return (nx ^ 4 + nz ^ 4) ^ 0.25
 end
 
--- How many cells outside the island edge this cell lies, or nil when beyond the mountain ring.
+-- How many cells outside the spawn island or the village basin this cell lies, or nil when beyond the
+-- mountain ring around both.
 local function mountainDepth(x: number, z: number): number?
 	for depth = 1, MOUNTAIN_BAND do
-		if islandDistance(x, z, depth) <= 1 then
+		if islandDistance(x, z, depth) <= 1 or Village.distance(x, z, depth) <= 1 then
 			return depth
 		end
 	end
@@ -136,12 +140,45 @@ local function buildHeightmap(): Cells
 	end
 
 	local cells: Cells = {}
+
+	-- Draw the spawn mountains' noise in the same order as before the village existed, so adding the
+	-- village leaves the spawn mountains (and the trees on them) exactly where they were.
+	for x = -48, 47 do
+		for z = -68, GRID_MAX_Z do
+			local oldCanyon = x >= -4 and x <= 3 and z < FIELD.z0 and z >= GATE_Z
+			if islandDistance(x, z) > 1 and islandDistance(x, z, MOUNTAIN_BAND) <= 1 and not oldCanyon then
+				peak(x, z)
+			end
+		end
+	end
+
+	local villageRng = Builder.rng(SEED + 7)
+	local villageChunks: { [string]: number } = {}
+	local function villageNoise(x: number, z: number): number
+		local key = `{x // 3},{z // 3}`
+		local value = villageChunks[key]
+		if value == nil then
+			value = villageRng.next()
+			villageChunks[key] = value
+		end
+		return value
+	end
 	for x = GRID_MIN_X, GRID_MAX_X do
 		cells[x] = {}
 		for z = GRID_MIN_Z, GRID_MAX_Z do
 			local d = islandDistance(x, z)
-			local depth = if d > 1 then mountainDepth(x, z) else nil
-			if depth and isCanyon(x, z) then
+			local vd = Village.distance(x, z)
+			local depth = if d > 1 and vd > 1 then mountainDepth(x, z) else nil
+			if vd <= 1 and d > 1 then
+				-- Elf Village: flat, with a thin ring of terraces at the basin's edge. Own noise, so the spawn
+				-- island's terrain does not change.
+				local h = if vd > Village.RIM then (if villageNoise(x, z) < 0.4 then 2 else 1) else 0
+				local kind = Village.kindAt(x, z)
+				if Village.isFlat(x, z) or isCanyon(x, z) or kind ~= "snow" then
+					h = 0
+				end
+				cells[x][z] = { h = h, kind = kind }
+			elseif depth and isCanyon(x, z) then
 				cells[x][z] = { h = 0, kind = if isNorthPath(x, z) then "stone" else "snow" }
 			elseif depth then
 				-- Same terraces as the island rim, rising outwards from 2-3 levels to about 12.
@@ -187,6 +224,8 @@ local GROUND_TOP = {
 	snow = { color = Palette.Snow, name = "Snow" },
 	field = { color = Palette.PackedSnow, name = "FieldSnow" },
 	stone = { color = Palette.Grout, name = "Grout" },
+	candy = { color = Palette.CandyPacked, name = "CandyField" },
+	villagesnow = { color = Palette.Snow, name = "Snow" },
 	mountain = { color = Palette.Snow, name = "MountainSnow" },
 	plain = { color = Palette.Snow, name = "PlainSnow" },
 }
@@ -484,16 +523,29 @@ local function buildArch(parent: any, name: string, z: number, baseY: number, co
 	return arch
 end
 
--- Zone 1 gate at the far end of the canyon; the mountains behind it stay closed until Zone 1 is built.
+-- The Zone 1 gate into the Elf Village. Its barrier is solid until a player unlocks the village: the
+-- server (AreaService) adds the unlock prompt to UnlockSpot, and each client turns the barrier off
+-- locally once its player has paid. Persistent so clients always have it, even with streaming.
 local function buildGate(parent: any)
-	local gateZ = CANYON_END * VOXEL + VOXEL / 2
-	local gate = buildArch(parent, "Zone1Gate", gateZ, 0, { Palette.Ice, Palette.IceDark }, 0.1, "ZONE 1\nCOMING SOON")
-	-- Invisible wall across the whole canyon until Zone 1 exists; later this becomes the zone unlock barrier.
-	block(gate, Vector3.new(32, 24, 1), CFrame.new(0, 12, gateZ), Palette.Ice, {
+	local gateZ = GATE_Z * VOXEL + VOXEL / 2
+	local gate = buildArch(parent, "Zone1Gate", gateZ, 0, { Palette.Ice, Palette.IceDark }, 0.1, "ELF VILLAGE")
+	gate.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	gate:SetAttribute("Area", "ElfVillage")
+	local barrier = block(gate, Vector3.new(32, 24, 1), CFrame.new(0, 12, gateZ), Palette.CandySky, {
 		name = "ZoneBarrier",
-		transparency = 1,
+		transparency = 0.35,
+		material = Enum.Material.ForceField,
 		studs = false,
 	})
+	barrier.CastShadow = false
+	local spot = block(gate, Vector3.new(2, 2, 2), CFrame.new(0, 3, gateZ + 4), Palette.Ice, {
+		name = "UnlockSpot",
+		transparency = 1,
+		canCollide = false,
+		studs = false,
+	})
+	spot.CanQuery = false
+	spot.CanTouch = false
 end
 
 local function buildSnowField(parent: any)
@@ -524,21 +576,32 @@ local function buildSnowField(parent: any)
 	fenceRun(Vector3.new(x1, 0, z0), Vector3.new(x1, 0, z1))
 end
 
--- Fresh snow over the snow field, one tile per cell. The server (SnowLayer) hides the tiles a snowball
--- rolls over and grows them back later. Tiles do not collide, so feet and balls sink into the snow.
+-- Fresh snow over the snow fields, one tile per cell: white on the spawn field, candy colours in the
+-- Elf Village. The server (SnowLayer) hides the tiles a snowball rolls over and grows them back later.
+-- Tiles do not collide, so feet and balls sink into the snow.
 local function buildFreshSnow(parent: any)
 	local layer = container("Model", "FreshSnow", parent)
+	local function tile(x: number, z: number, color: any)
+		local part = block(
+			layer,
+			Vector3.new(VOXEL, FRESH_SNOW_DEPTH, VOXEL),
+			CFrame.new(cellCenter(x, z, FRESH_SNOW_DEPTH / 2)),
+			color,
+			{ name = "FreshSnow", canCollide = false }
+		)
+		part.CanQuery = false
+		part.CanTouch = false
+	end
 	for x = FIELD.x0, FIELD.x1 do
 		for z = FIELD.z0, FIELD.z1 do
-			local tile = block(
-				layer,
-				Vector3.new(VOXEL, FRESH_SNOW_DEPTH, VOXEL),
-				CFrame.new(cellCenter(x, z, FRESH_SNOW_DEPTH / 2)),
-				Palette.FreshSnow,
-				{ name = "FreshSnow", canCollide = false }
-			)
-			tile.CanQuery = false
-			tile.CanTouch = false
+			tile(x, z, Palette.FreshSnow)
+		end
+	end
+	local rng = Builder.rng(SEED + 9)
+	local candy = Village.FIELD
+	for x = candy.x0, candy.x1 do
+		for z = candy.z0, candy.z1 do
+			tile(x, z, Village.candyColor(rng))
 		end
 	end
 end
@@ -549,7 +612,7 @@ local function buildZones(parent: any)
 	local zones = container("Model", "Zones", parent)
 	zones.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 
-	local function zone(name: string, title: string, subtitle: string, area: Area, height: number)
+	local function zone(name: string, title: string, subtitle: string, area: Area, height: number, snowValue: number?)
 		local part = box(
 			zones,
 			Vector3.new(area.x0 * VOXEL, 0, area.z0 * VOXEL),
@@ -562,10 +625,17 @@ local function buildZones(parent: any)
 		part.CastShadow = false
 		part:SetAttribute("ZoneName", title)
 		part:SetAttribute("ZoneSubtitle", subtitle)
+		-- Snow fields: how much each collected snow is worth (SnowballService).
+		if snowValue then
+			part:SetAttribute("SnowValue", snowValue)
+		end
 	end
 
 	zone("Spawn", "SPAWN", "Safe zone", PLAZA, 40)
-	zone("SnowField", "SNOW FIELD", "Roll your snowball!", FIELD, 40)
+	zone("SnowField", "SNOW FIELD", "Roll your snowball!", FIELD, 40, 1)
+	-- The whole village basin; AreaService also uses it to keep out players who have not unlocked it.
+	zone("ElfVillage", "ELF VILLAGE", "Talk to the elves!", Village.BOUNDS, 80)
+	zone("CandyField", "CANDY FIELD", "Candy snow is worth x3!", Village.FIELD, 40, 3)
 end
 
 -- Voxel sphere made of 2-stud cubes, merged into one part per row.
@@ -663,6 +733,11 @@ end
 local function buildDecorations(parent: any, cells: Cells)
 	local rng = Builder.rng(SEED + 3)
 	local occupied: { { x: number, z: number, r: number } } = {}
+	-- The spawn area keeps its original random layout: first pass over the grid rows it always had, then
+	-- a second pass with its own random numbers for the Elf Village and its mountains.
+	local zMin, zMax = -68, GRID_MAX_Z
+	-- Rows -67 and -68 were open plain before the village; keep them unusable in the first pass.
+	local firstPass = true
 
 	local function isReserved(x: number, z: number): boolean
 		return inArea(PLAZA, x, z)
@@ -670,11 +745,12 @@ local function buildDecorations(parent: any, cells: Cells)
 			or inArea(STATUE_AREA, x, z)
 			or isNearPath(x, z, 1)
 			or isCorridor(x, z)
+			or Village.isFlat(x, z)
 	end
 
 	local function isFree(x: number, z: number, radius: number, kind: string): boolean
 		local cell = cells[x] and cells[x][z]
-		if not cell or cell.kind ~= kind then
+		if not cell or cell.kind ~= kind or (firstPass and z < -66) then
 			return false
 		end
 		local margin = math.ceil(radius)
@@ -697,7 +773,7 @@ local function buildDecorations(parent: any, cells: Cells)
 		local placed, attempts = 0, 0
 		while placed < count and attempts < 6000 do
 			attempts += 1
-			local x, z = rng.int(GRID_MIN_X, GRID_MAX_X), rng.int(GRID_MIN_Z, GRID_MAX_Z)
+			local x, z = rng.int(GRID_MIN_X, GRID_MAX_X), rng.int(zMin, zMax)
 			if isFree(x, z, radius, kind or "snow") then
 				table.insert(occupied, { x = x, z = z, r = radius })
 				build(x, z, cells[x][z].h * VOXEL)
@@ -730,17 +806,20 @@ local function buildDecorations(parent: any, cells: Cells)
 	end, "mountain")
 
 	local props = container("Folder", "Props", parent)
-	place(30, 1, function(x, z, ground)
-		local base = cellCenter(x, z, ground)
-		for _ = 1, rng.int(2, 4) do
-			local width = rng.int(2, 4)
-			local height = width * rng.range(0.6, 1)
-			local offset = Vector3.new(rng.range(-1.5, 1.5), height / 2, rng.range(-1.5, 1.5))
-			block(props, Vector3.new(width, height, width), CFrame.new(base + offset), if rng.chance(0.3) then Palette.SnowShade else Palette.Snow, {
-				name = "SnowPile",
-			})
-		end
-	end)
+	local function snowPiles(count: number)
+		place(count, 1, function(x, z, ground)
+			local base = cellCenter(x, z, ground)
+			for _ = 1, rng.int(2, 4) do
+				local width = rng.int(2, 4)
+				local height = width * rng.range(0.6, 1)
+				local offset = Vector3.new(rng.range(-1.5, 1.5), height / 2, rng.range(-1.5, 1.5))
+				block(props, Vector3.new(width, height, width), CFrame.new(base + offset), if rng.chance(0.3) then Palette.SnowShade else Palette.Snow, {
+					name = "SnowPile",
+				})
+			end
+		end)
+	end
+	snowPiles(30)
 
 	place(16, 1, function(x, z, ground)
 		local base = cellCenter(x, z, ground)
@@ -768,6 +847,18 @@ local function buildDecorations(parent: any, cells: Cells)
 			})
 		end
 	end)
+
+	-- Elf Village and its mountains.
+	rng = Builder.rng(SEED + 8)
+	firstPass = false
+	zMin, zMax = GRID_MIN_Z, -69
+	place(14, 2.5, function(x, z, ground)
+		buildTree(trees, cellCenter(x, z, ground), rng.range(1.1, 1.6), rng)
+	end)
+	place(46, 2.5, function(x, z, ground)
+		buildTree(trees, cellCenter(x, z, ground), rng.range(1.2, 1.8), rng)
+	end, "mountain")
+	snowPiles(10)
 end
 
 -- Market stall at the south end of the plaza, facing the fountain (-Z), with Santa leaning on it.
@@ -990,6 +1081,7 @@ function Spawn.build(): any
 	buildGate(model)
 	buildSnowballStatue(model)
 	buildShop(model)
+	Village.build(model)
 	buildDecorations(container("Folder", "Decorations", model), cells)
 
 	return model

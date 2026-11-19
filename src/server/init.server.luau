@@ -1,7 +1,11 @@
+local AreaService = require(script.AreaService)
 local EconomyService = require(script.EconomyService)
 local MapCleanup = require(script.MapCleanup)
+local MissionService = require(script.MissionService)
 local SnowballService = require(script.SnowballService)
 
 MapCleanup.run()
 EconomyService.start()
 SnowballService.start()
+AreaService.start()
+MissionService.start()

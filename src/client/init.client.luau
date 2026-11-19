@@ -1,3 +1,5 @@
+local AreaGate = require(script.AreaGate)
+local Elves = require(script.Elves)
 local Hud = require(script.Hud)
 local SnowFall = require(script.SnowFall)
 local SnowballVisuals = require(script.SnowballVisuals)
@@ -6,5 +8,7 @@ local ZoneWatcher = require(script.ZoneWatcher)
 SnowFall.start()
 SnowballVisuals.start()
 ZoneWatcher.start()
--- Last: it waits for the server's remotes.
-Hud.start()
+-- These wait for parts of the map or the server's remotes, so they must not hold up each other.
+task.spawn(AreaGate.start)
+task.spawn(Elves.start)
+task.spawn(Hud.start)
