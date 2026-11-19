@@ -16,6 +16,9 @@
     },
 
     "StarterPlayer": {
+      "$properties": {
+        "CameraMaxZoomDistance": 60
+      },
       "StarterPlayerScripts": {
         "Client": {
           "$path": "src/client"
@@ -28,8 +31,12 @@
         "FilteringEnabled": true,
         "FallenPartsDestroyHeight": -60
       },
-      "Spawn": {
-        "$path": "assets/map/Spawn.rbxm"
+      "Map": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": false,
+        "Spawn": {
+          "$path": "assets/map/Spawn.rbxm"
+        }
       }
     },
     "Lighting": {

@@ -25,7 +25,6 @@ Builder.Palette = {
 	Rock = Color3.fromRGB(128, 136, 150),
 	Ice = Color3.fromRGB(166, 214, 246),
 	IceDark = Color3.fromRGB(128, 188, 232),
-	Spawn = Color3.fromRGB(120, 190, 240),
 	LampPost = Color3.fromRGB(58, 64, 80),
 	LampLight = Color3.fromRGB(255, 214, 140),
 	Sign = Color3.fromRGB(44, 66, 110),
