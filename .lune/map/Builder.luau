@@ -15,6 +15,9 @@ Builder.Palette = {
 	Snow = Color3.fromRGB(236, 243, 250),
 	SnowShade = Color3.fromRGB(218, 230, 244),
 	FieldSnow = Color3.fromRGB(246, 250, 255),
+	-- Snow field: fresh snow on top, packed snow underneath shows where a snowball has rolled.
+	FreshSnow = Color3.fromRGB(250, 252, 255),
+	PackedSnow = Color3.fromRGB(192, 210, 234),
 	Wood = Color3.fromRGB(138, 96, 64),
 	WoodLight = Color3.fromRGB(184, 136, 90),
 	WoodDark = Color3.fromRGB(104, 70, 46),
