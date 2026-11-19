@@ -49,6 +49,7 @@ local CANYON_START, CANYON_END = -54, -62
 local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 92)
 local SPAWN_COUNT, SPAWN_RADIUS = 8, 24
 local STATUE_CENTER = Vector3.new(64, 13, 92)
+local SHOP_CENTER = Vector3.new(0, TILE_HEIGHT, 127)
 
 local function inArea(area: Area, x: number, z: number, margin: number?): boolean
 	local m = margin or 0
@@ -749,6 +750,184 @@ local function buildDecorations(parent: any, cells: Cells)
 	end)
 end
 
+-- Market stall at the south end of the plaza, facing the fountain (-Z), with Santa leaning on it.
+local function buildShop(parent: any)
+	local shop = container("Model", "Shop", parent)
+	local rng = Builder.rng(SEED + 6)
+	local origin = CFrame.new(SHOP_CENTER)
+	local function at(x: number, y: number, z: number): any
+		return origin * CFrame.new(x, y, z)
+	end
+	local function part(name: string, size: any, cframe: any, color: any, studs: boolean?): any
+		return block(shop, size, cframe, color, { name = name, studs = studs })
+	end
+
+	-- Counter: planked front, dark top board.
+	local counterTop = 3.3
+	part("Counter", Vector3.new(20, 2.8, 4.5), at(0, 1.4, 0.25), Palette.Wood)
+	for i, y in { 0.47, 1.4, 2.33 } do
+		part("Plank", Vector3.new(20.2, 0.85, 0.2), at(0, y, -2.05), if i % 2 == 0 then Palette.WoodLight else Palette.Wood)
+	end
+	for _, x in { -9.9, 0, 9.9 } do
+		part("Trim", Vector3.new(0.6, 2.8, 0.3), at(x, 1.4, -2.15), Palette.WoodDark)
+	end
+	part("CounterTop", Vector3.new(21.2, 0.5, 5.4), at(0, counterTop - 0.25, 0.2), Palette.WoodDark)
+
+	-- Posts: the back pair is taller so the awning slopes down towards the front.
+	local roofFront, roofBack = Vector3.new(0, 9.6, -4.6), Vector3.new(0, 11.8, 3.4)
+	for _, x in { -10.2, 10.2 } do
+		part("Post", Vector3.new(0.9, 9.4, 0.9), at(x, 4.7, -2.1), Palette.WoodLight)
+		part("Post", Vector3.new(0.9, 11.4, 0.9), at(x, 5.7, 2.6), Palette.WoodLight)
+	end
+	part("Beam", Vector3.new(21.4, 0.7, 0.7), at(0, 9.3, -2.1), Palette.WoodDark)
+	part("Beam", Vector3.new(21.4, 0.7, 0.7), at(0, 11.3, 2.6), Palette.WoodDark)
+
+	-- Awning: red and white stripes, sloped, with a stepped "scalloped" edge at the front.
+	local slope = roofBack - roofFront
+	local length = slope.Magnitude
+	local roof = origin * CFrame.new((roofFront + roofBack) / 2) * CFrame.Angles(-math.atan2(slope.Y, slope.Z), 0, 0)
+	local stripes, stripeWidth = 12, 2
+	for i = 0, stripes - 1 do
+		local x = -stripes * stripeWidth / 2 + stripeWidth * (i + 0.5)
+		local color = if i % 2 == 0 then Palette.AwningRed else Palette.AwningWhite
+		part("Awning", Vector3.new(stripeWidth, 0.6, length + 1), roof * CFrame.new(x, 0, 0), color)
+		local edge = roof * CFrame.new(x, 0, -(length + 1) / 2)
+		part("Flap", Vector3.new(stripeWidth, 0.9, 0.3), edge * CFrame.new(0, -0.7, 0.15), color)
+		part("Flap", Vector3.new(stripeWidth * 0.5, 0.7, 0.3), edge * CFrame.new(0, -1.45, 0.15), color)
+	end
+	-- Snow on the awning: one slab per stripe with a ragged front edge, plus a few lumps.
+	for i = 0, stripes - 1 do
+		local x = -stripes * stripeWidth / 2 + stripeWidth * (i + 0.5)
+		local depth = (length + 1) * rng.range(0.62, 0.9)
+		local z = (length + 1) / 2 - depth / 2
+		part("RoofSnow", Vector3.new(stripeWidth + 0.1, 0.7, depth), roof * CFrame.new(x, 0.62, z), Palette.Snow)
+	end
+	for _ = 1, 6 do
+		local size = Vector3.new(rng.range(2, 4), rng.range(0.5, 0.9), rng.range(2, 3))
+		part("RoofSnow", size, roof * CFrame.new(rng.range(-9, 9), 0.9 + size.Y / 2, rng.range(0, 3)), Palette.Snow)
+	end
+	for _ = 1, 7 do
+		local height = rng.range(0.6, 1.4)
+		local edge = roof * CFrame.new(rng.range(-11, 11), 0, -(length + 1) / 2)
+		block(shop, Vector3.new(0.3, height, 0.3), edge * CFrame.new(0, -1.8 - height / 2, 0.15), Palette.Ice, {
+			name = "Icicle",
+			transparency = 0.15,
+			studs = false,
+		})
+	end
+
+	-- Sign on top of the awning.
+	local sign = part("Sign", Vector3.new(9, 2.6, 0.5), at(0, 13.9, 3.2), Palette.AwningRed)
+	part("SignFrame", Vector3.new(9.6, 0.4, 0.7), at(0, 12.45, 3.2), Palette.WoodDark)
+	part("SignSnow", Vector3.new(9.6, 0.5, 0.9), at(0, 15.45, 3.2), Palette.Snow)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front -- faces -Z, towards the fountain
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 50
+	gui.Parent = sign
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.FontFace = roblox.Font.fromEnum(Enum.Font.FredokaOne)
+	label.Text = "SHOP"
+	label.TextScaled = true
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextStrokeTransparency = 0
+	label.TextStrokeColor3 = Color3.fromRGB(90, 10, 14)
+	label.Parent = gui
+
+	-- Open crate (bottom and four walls) with snowballs poking out of the top.
+	local function crate(cframe: any, size: any, snowballs: boolean)
+		local wall = 0.3
+		local half = size / 2
+		part("Crate", Vector3.new(size.X, wall, size.Z), cframe * CFrame.new(0, -half.Y + wall / 2, 0), Palette.WoodLight)
+		for _, side in { -1, 1 } do
+			part("Crate", Vector3.new(size.X, size.Y, wall), cframe * CFrame.new(0, 0, side * (half.Z - wall / 2)), Palette.WoodLight)
+			part("Crate", Vector3.new(wall, size.Y, size.Z - 2 * wall), cframe * CFrame.new(side * (half.X - wall / 2), 0, 0), Palette.WoodLight)
+			part("Slat", Vector3.new(size.X + 0.05, 0.3, wall + 0.05), cframe * CFrame.new(0, half.Y * 0.35, side * (half.Z - wall / 2)), Palette.Wood)
+		end
+		if snowballs then
+			local columns, rows = math.max(1, math.floor(size.X / 1.1)), math.max(1, math.floor(size.Z / 1.1))
+			for cx = 0, columns - 1 do
+				for cz = 0, rows - 1 do
+					local diameter = rng.range(0.9, 1.15)
+					local x = -half.X + wall + (cx + 0.5) * (size.X - 2 * wall) / columns
+					local z = -half.Z + wall + (cz + 0.5) * (size.Z - 2 * wall) / rows
+					local ball = part("Snowball", Vector3.new(diameter, diameter, diameter), cframe * CFrame.new(x, half.Y - 0.25, z), Palette.Snow, false)
+					ball.Shape = Enum.PartType.Ball
+				end
+			end
+		end
+	end
+
+	local function gift(cframe: any, size: any, color: any, ribbon: any)
+		part("Gift", size, cframe, color, false)
+		part("Ribbon", Vector3.new(size.X + 0.06, size.Y + 0.06, 0.3), cframe, ribbon, false)
+		part("Ribbon", Vector3.new(0.3, size.Y + 0.06, size.Z + 0.06), cframe, ribbon, false)
+		for _, side in { -1, 1 } do
+			part("Bow", Vector3.new(0.5, 0.4, 0.5), cframe * CFrame.new(side * 0.3, size.Y / 2 + 0.2, 0) * CFrame.Angles(0, 0, side * 0.5), ribbon, false)
+		end
+	end
+
+	-- On the counter.
+	crate(at(-6, counterTop + 0.8, 0), Vector3.new(4.2, 1.6, 3), true)
+	crate(at(-1.2, counterTop + 0.8, 0.2), Vector3.new(4.2, 1.6, 3), true)
+	gift(at(4.2, counterTop + 0.9, 0.4), Vector3.new(1.8, 1.8, 1.8), Palette.AwningRed, Palette.AwningWhite)
+	gift(at(6.6, counterTop + 0.7, 0.1), Vector3.new(1.6, 1.4, 1.6), Palette.GiftGreen, Palette.Gold)
+	gift(at(5.3, counterTop + 2.3, 0.3) * CFrame.Angles(0, 0.4, 0), Vector3.new(1.1, 1, 1.1), Palette.Gold, Palette.AwningRed)
+
+	-- In front of the counter: two crates leaning back against it and one upright.
+	for _, x in { -7, -2.6 } do
+		crate(at(x, 1.3, -3.3) * CFrame.Angles(math.rad(-28), 0, 0), Vector3.new(4.2, 2.2, 3), true)
+	end
+	crate(at(2.6, 1.1, -4.6) * CFrame.Angles(0, math.rad(8), 0), Vector3.new(3.6, 2.2, 3), true)
+	gift(at(6.2, 0.8, -3.6) * CFrame.Angles(0, -0.3, 0), Vector3.new(1.8, 1.6, 1.8), Palette.GiftGreen, Palette.AwningRed)
+
+	-- Santa leaning on the right end of the counter, his left arm resting on it.
+	local santa = container("Model", "Santa", shop)
+	local body = at(12.6, 0, -0.6) * CFrame.Angles(0, math.rad(-12), 0) * CFrame.Angles(0, 0, math.rad(9))
+	local function piece(name: string, size: any, cframe: any, color: any)
+		block(santa, size, cframe, color, { name = name, studs = false })
+	end
+	-- Legs, slightly apart.
+	for _, x in { -0.5, 0.5 } do
+		local leg = body * CFrame.new(x, 0, 0)
+		piece("Boot", Vector3.new(1.04, 0.45, 1.12), leg * CFrame.new(0, 0.225, -0.04), Palette.Coal)
+		piece("LegFur", Vector3.new(1.06, 0.32, 1.06), leg * CFrame.new(0, 0.6, 0), Palette.AwningWhite)
+		piece("Leg", Vector3.new(1, 1.25, 1), leg * CFrame.new(0, 1.375, 0), Palette.SantaRed)
+	end
+	-- Torso: red coat, white centre strip and hem, black belt with a gold buckle.
+	piece("Torso", Vector3.new(2, 2, 1), body * CFrame.new(0, 3, 0), Palette.SantaRed)
+	piece("CoatStrip", Vector3.new(0.5, 2, 0.1), body * CFrame.new(0, 3, -0.53), Palette.AwningWhite)
+	piece("Hem", Vector3.new(2.08, 0.28, 1.08), body * CFrame.new(0, 2.14, 0), Palette.AwningWhite)
+	piece("Belt", Vector3.new(2.06, 0.36, 1.06), body * CFrame.new(0, 2.55, 0), Palette.Coal)
+	piece("Buckle", Vector3.new(0.6, 0.48, 0.1), body * CFrame.new(0, 2.55, -0.58), Palette.Gold)
+	-- Arms hang from a pivot at the top of the shoulder.
+	local function arm(side: number, angle: number)
+		local shoulder = body * CFrame.new(side * 1.5, 4, 0) * CFrame.Angles(0, 0, angle)
+		piece("Arm", Vector3.new(1, 1.25, 1), shoulder * CFrame.new(0, -0.625, 0), Palette.SantaRed)
+		piece("ArmFur", Vector3.new(1.06, 0.32, 1.06), shoulder * CFrame.new(0, -1.4, 0), Palette.AwningWhite)
+		piece("Hand", Vector3.new(0.9, 0.5, 0.9), shoulder * CFrame.new(0, -1.8, 0), Palette.Skin)
+	end
+	arm(-1, math.rad(-95)) -- left arm laid along the counter top
+	arm(1, math.rad(4))
+	-- Head with eyes, nose, beard and moustache.
+	local head = body * CFrame.new(0, 4.65, 0)
+	piece("Head", Vector3.new(1.3, 1.3, 1.3), head, Palette.Skin)
+	for _, x in { -0.28, 0.28 } do
+		piece("Eye", Vector3.new(0.18, 0.26, 0.1), head * CFrame.new(x, 0.2, -0.66), Palette.Coal)
+	end
+	piece("Beard", Vector3.new(1.42, 0.8, 0.4), head * CFrame.new(0, -0.38, -0.55), Palette.AwningWhite)
+	piece("Beard", Vector3.new(1.1, 0.55, 0.45), head * CFrame.new(0, -0.95, -0.5), Palette.AwningWhite)
+	piece("Moustache", Vector3.new(1, 0.28, 0.18), head * CFrame.new(0, -0.05, -0.78), Palette.AwningWhite)
+	piece("Nose", Vector3.new(0.28, 0.24, 0.2), head * CFrame.new(0, 0.08, -0.85), Color3.fromRGB(232, 150, 136))
+	-- Hat: fur brim, red cap and a tip flopping to one side with a pom-pom.
+	piece("HatBrim", Vector3.new(1.55, 0.36, 1.55), head * CFrame.new(0, 0.72, 0), Palette.AwningWhite)
+	piece("Hat", Vector3.new(1.3, 0.6, 1.3), head * CFrame.new(0, 1.18, 0), Palette.SantaRed)
+	piece("HatTip", Vector3.new(0.8, 0.55, 0.8), head * CFrame.new(0.25, 1.6, 0.05) * CFrame.Angles(0, 0, math.rad(-25)), Palette.SantaRed)
+	piece("PomPom", Vector3.new(0.48, 0.48, 0.48), head * CFrame.new(0.72, 1.62, 0.05), Palette.AwningWhite)
+end
+
 local Spawn = {}
 
 function Spawn.build(): any
@@ -789,6 +968,7 @@ function Spawn.build(): any
 	buildZones(model)
 	buildGate(model)
 	buildSnowballStatue(model)
+	buildShop(model)
 	buildDecorations(container("Folder", "Decorations", model), cells)
 
 	return model
