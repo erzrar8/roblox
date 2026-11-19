@@ -1,19 +1,22 @@
 --!strict
--- Pushing pose for a character rolling a snowball, layered on top of its normal animations.
+-- Pushing pose for a character rolling a snowball, on top of its normal animations.
 --
 -- Works with classic Motor6D joints and with Avatar Joint Upgrade AnimationConstraints (the default
 -- R15 joints since 2026, where C0 is read-only). Both expose Transform, which the Animator rewrites
--- every frame before PreSimulation, so the pose is multiplied into Transform during PreSimulation as
--- Roblox recommends for procedural animation.
+-- every frame before PreSimulation, so the pose is written into Transform during PreSimulation as
+-- Roblox recommends for procedural animation. Upper body joints are fully taken over (so the walk
+-- cycle cannot swing or twist the arms); the legs keep walking.
 local SnowballPose = {}
 
 local BEND_SMALL, BEND_BIG = math.rad(42), math.rad(8) -- stooped over a small ball, upright behind a big one
 local BEND_SIZE_MIN, BEND_SIZE_MAX = 2, 12 -- ball diameters between which the bend eases off
 local ARM_MAX = math.rad(165)
-local PUSH_WOBBLE, PUSH_RATE = math.rad(4), 9
+-- Arm angles follow the ball smoothly instead of every bob of the shoulders.
+local ARM_SMOOTHING = 6
 
 type Joint = Motor6D | AnimationConstraint
-type Role = "bend" | "legs" | "arm"
+-- bend: torso pitch; legs: R6 hips counter-rotated; arm: shoulder aimed at the ball; hold: kept straight.
+type Role = "bend" | "legs" | "arm" | "hold"
 
 type PoseJoint = {
 	joint: Joint,
@@ -22,6 +25,7 @@ type PoseJoint = {
 	role: Role,
 	written: CFrame?,
 	base: CFrame?,
+	angle: number?,
 }
 
 export type Rig = { joints: { PoseJoint } }
@@ -31,7 +35,7 @@ export type Params = {
 	diameter: number,
 	center: Vector3, -- ball centre in world space
 	moving: number, -- 0..1, how fast the character walks
-	time: number,
+	dt: number,
 }
 
 local JOINT_ROLES: { [string]: Role } = {
@@ -39,6 +43,10 @@ local JOINT_ROLES: { [string]: Role } = {
 	Waist = "bend",
 	RightShoulder = "arm",
 	LeftShoulder = "arm",
+	RightElbow = "hold",
+	LeftElbow = "hold",
+	RightWrist = "hold",
+	LeftWrist = "hold",
 	-- R6: no waist, so the whole body bends at the root and the hips keep the legs upright.
 	RootJoint = "bend",
 	["Right Hip"] = "legs",
@@ -123,16 +131,19 @@ end
 
 function SnowballPose.apply(rig: Rig, params: Params)
 	local w = params.weight
-	local bend = SnowballPose.bendFor(params.diameter, params.moving) * w
+	local bend = SnowballPose.bendFor(params.diameter, params.moving)
 	local radius = params.diameter / 2
-	local wobble = PUSH_WOBBLE * params.moving * math.sin(params.time * PUSH_RATE)
+	local follow = 1 - math.exp(-ARM_SMOOTHING * params.dt)
 
 	for _, pj in rig.joints do
 		local transform = animated(pj)
 		if pj.role == "bend" then
-			write(pj, inJointFrame(pj, CFrame.Angles(-bend, 0, 0)) * transform)
+			-- Replaces the animation, so the walk cycle's torso twist cannot swing the arms around.
+			write(pj, transform:Lerp(inJointFrame(pj, CFrame.Angles(-bend, 0, 0)), w))
 		elseif pj.role == "legs" then
-			write(pj, inJointFrame(pj, CFrame.Angles(bend, 0, 0)) * transform)
+			write(pj, inJointFrame(pj, CFrame.Angles(bend * w, 0, 0)) * transform)
+		elseif pj.role == "hold" then
+			write(pj, transform:Lerp(CFrame.identity, w))
 		else
 			-- Point the arm at the nearest spot on the ball: down for a small ball, up for a big one.
 			local shoulder = (pj.part0.CFrame * pj.pivot).Position
@@ -140,7 +151,10 @@ function SnowballPose.apply(rig: Rig, params: Params)
 			if fromBall.Magnitude > 1e-3 then
 				local target = params.center + fromBall.Unit * radius
 				local direction = pj.part0.CFrame:VectorToObjectSpace(target - shoulder)
-				local angle = math.clamp(math.atan2(-direction.Z, -direction.Y), 0, ARM_MAX) + wobble
+				local aim = math.clamp(math.atan2(-direction.Z, -direction.Y), 0, ARM_MAX)
+				local previous = pj.angle
+				local angle: number = if previous then previous + (aim - previous) * follow else aim
+				pj.angle = angle
 				write(pj, transform:Lerp(inJointFrame(pj, CFrame.Angles(angle, 0, 0)), w))
 			end
 		end
@@ -156,6 +170,7 @@ function SnowballPose.release(rig: Rig)
 		end
 		pj.written = nil
 		pj.base = nil
+		pj.angle = nil
 	end
 end
 
