@@ -1,7 +1,7 @@
 --!strict
 -- Spawn island: tiled plaza with invisible spawn points around a frozen fountain, a winding path to the
--- fenced snow field where players roll their snowballs, and a bridge from the field to the (not yet
--- built) Zone 1 gate.
+-- fenced snow field where players roll their snowballs, and a canyon from the field to the (not yet
+-- built) Zone 1 gate. A ring of tall mountains encloses everything.
 --
 -- Grid: 1 voxel = 4 studs, cell (x, z) covers X in [4x, 4x+4] and Z in [4z, 4z+4]. Ground top of
 -- height level h is at Y = 4h. Players spawn facing -Z: fountain, then path, field and gate.
@@ -20,12 +20,15 @@ local Palette = Builder.Palette
 local block, box, container = Builder.block, Builder.box, Builder.container
 
 local VOXEL = 4
-local GRID_MIN_X, GRID_MAX_X = -25, 24
-local GRID_MIN_Z, GRID_MAX_Z = -38, 30
 -- Elongated rounded-rectangle island (radii in cells), centred slightly towards -Z.
 local ISLAND_RX, ISLAND_RZ, ISLAND_CZ = 24.5, 33.5, -4
+-- Ring of mountains around the island, so a zoomed-out camera sees peaks instead of the void.
+local MOUNTAIN_BAND = 14
+local GRID_MIN_X, GRID_MAX_X = -40, 39
+local GRID_MIN_Z, GRID_MAX_Z = -52, 44
 local ISLAND_BOTTOM = -12
 local CAP = 1.5
+local MOUNTAIN_CAP = 3
 local TILE_HEIGHT = 0.4
 local SEED = 2026
 
@@ -38,7 +41,7 @@ local PLAZA: Area = { x0 = -7, x1 = 6, z0 = 10, z1 = 25 }
 local FIELD: Area = { x0 = -16, x1 = 15, z0 = -29, z1 = -8 }
 local STATUE_AREA: Area = { x0 = 9, x1 = 14, z0 = 14, z1 = 19 }
 local PATH_Z0, PATH_Z1 = -7, 9
-local BRIDGE_START, BRIDGE_END = -38, -45
+local CANYON_START, CANYON_END = -38, -45
 
 -- Layout, in studs.
 local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 72)
@@ -64,9 +67,9 @@ local function isNearPath(x: number, z: number, margin: number): boolean
 	return x >= c - 2 - margin and x <= c + 1 + margin
 end
 
--- Paved strip from the field's north opening to the bridge.
+-- Paved strip from the field's north opening through the canyon to the gate.
 local function isNorthPath(x: number, z: number): boolean
-	return x >= -2 and x <= 1 and z < FIELD.z0 and z >= BRIDGE_END
+	return x >= -2 and x <= 1 and z < FIELD.z0 and z >= CANYON_END
 end
 
 -- Corridor through the rim towards the gate, kept flat and free of decorations.
@@ -74,11 +77,27 @@ local function isCorridor(x: number, z: number): boolean
 	return x >= -3 and x <= 2 and z < FIELD.z0
 end
 
-local function islandDistance(x: number, z: number): number
-	-- Normalised superellipse: <= 1 is inside the island.
-	local nx = (x + 0.5) / ISLAND_RX
-	local nz = (z + 0.5 - ISLAND_CZ) / ISLAND_RZ
+-- Flat pass cut through the mountains up to the Zone 1 gate; mountains close it off behind the gate.
+local function isCanyon(x: number, z: number): boolean
+	return x >= -4 and x <= 3 and z < FIELD.z0 and z >= CANYON_END
+end
+
+-- Normalised superellipse grown by `grow` cells: <= 1 is inside.
+local function islandDistance(x: number, z: number, grow: number?): number
+	local g = grow or 0
+	local nx = (x + 0.5) / (ISLAND_RX + g)
+	local nz = (z + 0.5 - ISLAND_CZ) / (ISLAND_RZ + g)
 	return (nx ^ 4 + nz ^ 4) ^ 0.25
+end
+
+-- How many cells outside the island edge this cell lies, or nil when beyond the mountain ring.
+local function mountainDepth(x: number, z: number): number?
+	for depth = 1, MOUNTAIN_BAND do
+		if islandDistance(x, z, depth) <= 1 then
+			return depth
+		end
+	end
+	return nil
 end
 
 local function cellCenter(x: number, z: number, y: number): any
@@ -99,12 +118,32 @@ local function buildHeightmap(): Cells
 		return value
 	end
 
+	-- Separate 3x3 noise for the mountains, so the island terrain stays as it was.
+	local peakRng = Builder.rng(SEED + 5)
+	local peakNoise: { [string]: number } = {}
+	local function peak(x: number, z: number): number
+		local key = `{x // 3},{z // 3}`
+		local value = peakNoise[key]
+		if value == nil then
+			value = peakRng.next()
+			peakNoise[key] = value
+		end
+		return value
+	end
+
 	local cells: Cells = {}
 	for x = GRID_MIN_X, GRID_MAX_X do
 		cells[x] = {}
 		for z = GRID_MIN_Z, GRID_MAX_Z do
 			local d = islandDistance(x, z)
-			if d <= 1 then
+			local depth = if d > 1 then mountainDepth(x, z) else nil
+			if depth and isCanyon(x, z) then
+				cells[x][z] = { h = 0, kind = if isNorthPath(x, z) then "stone" else "snow" }
+			elseif depth then
+				-- Rises outwards from a 32+ stud cliff; even levels keep every step taller than a jump.
+				local h = 8 + depth * 1.2 + peak(x, z) * 6
+				cells[x][z] = { h = 2 * math.floor(h / 2), kind = "mountain" }
+			elseif d <= 1 then
 				local n = noise(x, z)
 				local h
 				if d > 0.86 then
@@ -115,7 +154,7 @@ local function buildHeightmap(): Cells
 					h = if d > 0.5 and n > 0.85 then 1 else 0
 				end
 
-				if isCorridor(x, z) or inArea(STATUE_AREA, x, z) or inArea(FIELD, x, z, 1) or isNearPath(x, z, 1) then
+				if isCorridor(x, z) or isCanyon(x, z) or inArea(STATUE_AREA, x, z) or inArea(FIELD, x, z, 1) or isNearPath(x, z, 1) then
 					h = 0
 				end
 
@@ -142,6 +181,7 @@ local GROUND_TOP = {
 	snow = { color = Palette.Snow, name = "Snow" },
 	field = { color = Palette.FieldSnow, name = "FieldSnow" },
 	stone = { color = Palette.Grout, name = "Grout" },
+	mountain = { color = Palette.Snow, name = "MountainSnow" },
 }
 
 local function buildGround(parent: any, cells: Cells)
@@ -157,8 +197,11 @@ local function buildGround(parent: any, cells: Cells)
 		local x0, x1 = rect.x0 * VOXEL, (rect.x1 + 1) * VOXEL
 		local z0, z1 = rect.z0 * VOXEL, (rect.z1 + 1) * VOXEL
 		local surface = GROUND_TOP[cell.kind]
-		box(parent, Vector3.new(x0, ISLAND_BOTTOM, z0), Vector3.new(x1, top - CAP, z1), Palette.Dirt, { name = "Dirt" })
-		box(parent, Vector3.new(x0, top - CAP, z0), Vector3.new(x1, top, z1), surface.color, { name = surface.name })
+		local isMountain = cell.kind == "mountain"
+		local cap = if isMountain then MOUNTAIN_CAP else CAP
+		local body = if isMountain then { color = Palette.Cliff, name = "Cliff" } else { color = Palette.Dirt, name = "Dirt" }
+		box(parent, Vector3.new(x0, ISLAND_BOTTOM, z0), Vector3.new(x1, top - cap, z1), body.color, { name = body.name })
+		box(parent, Vector3.new(x0, top - cap, z0), Vector3.new(x1, top, z1), surface.color, { name = surface.name })
 	end
 end
 
@@ -189,7 +232,7 @@ local function buildTiles(parent: any)
 		end
 	end
 
-	for z = FIELD.z0 - 1, BRIDGE_END, -1 do
+	for z = FIELD.z0 - 1, CANYON_END, -1 do
 		for x = -2, 1 do
 			tile(x, z, if x == -2 or x == 1 then Palette.TileDark else paving())
 		end
@@ -389,22 +432,12 @@ local function buildArch(parent: any, name: string, z: number, baseY: number, co
 	return arch
 end
 
-local function buildBridgeAndGate(parent: any)
-	local bridge = container("Model", "Bridge", parent)
-	local zMin, zMax = BRIDGE_END * VOXEL, (BRIDGE_START + 1) * VOXEL
-	box(bridge, Vector3.new(-8, -4, zMin), Vector3.new(8, -CAP, zMax), Palette.Dirt, { name = "Dirt" })
-	box(bridge, Vector3.new(-8, -CAP, zMin), Vector3.new(8, 0, zMax), Palette.Grout, { name = "Grout" })
-	for _, side in { -1, 1 } do
-		local xInner, xOuter = 8 * side, 12 * side
-		local xMin, xMax = math.min(xInner, xOuter), math.max(xInner, xOuter)
-		box(bridge, Vector3.new(xMin, -4, zMin), Vector3.new(xMax, 1, zMax), Palette.Dirt, { name = "RailDirt" })
-		box(bridge, Vector3.new(xMin, 1, zMin), Vector3.new(xMax, 2.5, zMax), Palette.Snow, { name = "RailSnow" })
-	end
-
-	local gateZ = zMin + VOXEL / 2
-	local gate = buildArch(parent, "Zone1Gate", gateZ, 2.5, { Palette.Ice, Palette.IceDark }, 0.1, "ZONE 1\nCOMING SOON")
-	-- Invisible wall until Zone 1 exists; later this becomes the zone unlock barrier.
-	block(gate, Vector3.new(16, 18, 1), CFrame.new(0, 9.5, gateZ), Palette.Ice, {
+-- Zone 1 gate at the far end of the canyon; the mountains behind it stay closed until Zone 1 is built.
+local function buildGate(parent: any)
+	local gateZ = CANYON_END * VOXEL + VOXEL / 2
+	local gate = buildArch(parent, "Zone1Gate", gateZ, 0, { Palette.Ice, Palette.IceDark }, 0.1, "ZONE 1\nCOMING SOON")
+	-- Invisible wall across the whole canyon until Zone 1 exists; later this becomes the zone unlock barrier.
+	block(gate, Vector3.new(32, 24, 1), CFrame.new(0, 12, gateZ), Palette.Ice, {
 		name = "ZoneBarrier",
 		transparency = 1,
 		studs = false,
@@ -430,7 +463,7 @@ local function buildSnowField(parent: any)
 			block(fence, size, CFrame.new((a + b) / 2 + Vector3.new(0, y, 0)), Palette.Wood, { name = "Rail" })
 		end
 	end
-	-- Both short sides open onto the paths: south towards the spawn plaza, north towards the bridge.
+	-- Both short sides open onto the paths: south towards the spawn plaza, north towards the canyon and the Zone 1 gate.
 	fenceRun(Vector3.new(x0, 0, z1), Vector3.new(-8, 0, z1))
 	fenceRun(Vector3.new(8, 0, z1), Vector3.new(x1, 0, z1))
 	fenceRun(Vector3.new(x0, 0, z0), Vector3.new(-8, 0, z0))
@@ -694,12 +727,12 @@ function Spawn.build(): any
 		buildLamp(lamps, Vector3.new((c + 2) * VOXEL + 2, 0, z * VOXEL + 2))
 	end
 	for _, x in { -10, 10 } do
-		buildLamp(lamps, Vector3.new(x, 0, (BRIDGE_START + 2.5) * VOXEL))
+		buildLamp(lamps, Vector3.new(x, 0, (CANYON_START + 2.5) * VOXEL))
 	end
 
 	buildSnowField(model)
 	buildZones(model)
-	buildBridgeAndGate(model)
+	buildGate(model)
 	buildSnowballStatue(model)
 	buildDecorations(container("Folder", "Decorations", model), cells)
 
