@@ -3,16 +3,19 @@
 local Config = {}
 
 Config.START_DIAMETER = 2
-Config.MAX_DIAMETER = 40
--- Snow (studs³) added to the ball for each fresh snow tile it rolls over.
+-- The largest ball is set by the Ball Size upgrade (see Upgrades); this is only where the slowdown peaks.
+Config.SLOWDOWN_FULL = 40
+-- Snow (studs³) added to the ball for each fresh snow tile it rolls over, before Snow Power.
 Config.SNOW_PER_TILE = 3
+-- Snow (studs³) worth one coin when selling, before the Cash Bonus.
+Config.SNOW_PER_COIN = 5
 -- Seconds before a collected tile of fresh snow grows back.
 Config.REGROW_MIN = 15
 Config.REGROW_MAX = 25
 
 Config.BASE_WALK_SPEED = 16
 Config.MIN_WALK_SPEED = 7
--- The ball starts slowing its owner down at this diameter; MIN_WALK_SPEED is reached at MAX_DIAMETER.
+-- The ball starts slowing its owner down at this diameter; MIN_WALK_SPEED is reached at SLOWDOWN_FULL.
 Config.SLOWDOWN_FROM = 4
 
 -- How far the ball sinks below the floor, so it looks pressed into the snow.
@@ -33,8 +36,13 @@ function Config.diameterFromVolume(volume: number): number
 end
 
 function Config.walkSpeed(diameter: number): number
-	local t = math.clamp((diameter - Config.SLOWDOWN_FROM) / (Config.MAX_DIAMETER - Config.SLOWDOWN_FROM), 0, 1)
+	local t = math.clamp((diameter - Config.SLOWDOWN_FROM) / (Config.SLOWDOWN_FULL - Config.SLOWDOWN_FROM), 0, 1)
 	return Config.BASE_WALK_SPEED + (Config.MIN_WALK_SPEED - Config.BASE_WALK_SPEED) * math.sqrt(t)
+end
+
+-- Coins for selling a ball holding `snow` studs³ of collected snow (its volume minus the starting ball).
+function Config.sellValue(snow: number, cashMultiplier: number): number
+	return math.floor(math.max(snow, 0) / Config.SNOW_PER_COIN * cashMultiplier)
 end
 
 -- Horizontal distance from the HumanoidRootPart to the ball centre. The hands touch the ball where they
