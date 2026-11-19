@@ -116,14 +116,15 @@ function Hud.start()
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	-- Scale everything down on small screens.
-	local screenScale = 1
+	local hudScale, windowScale = HudView.SCALE, UpgradesView.SCALE
 	local function rescale()
 		local camera = Workspace.CurrentCamera
 		local viewport = if camera then camera.ViewportSize else DESIGN_SIZE
-		screenScale = math.clamp(math.min(viewport.X / DESIGN_SIZE.X, viewport.Y / DESIGN_SIZE.Y), MIN_SCALE, 1)
-		hud.topScale.Scale = screenScale
-		hud.moneyScale.Scale = screenScale
-		window.scale.Scale = screenScale
+		local screen = math.clamp(math.min(viewport.X / DESIGN_SIZE.X, viewport.Y / DESIGN_SIZE.Y), MIN_SCALE, 1)
+		hudScale, windowScale = HudView.SCALE * screen, UpgradesView.SCALE * screen
+		hud.topScale.Scale = hudScale
+		hud.moneyScale.Scale = hudScale
+		window.scale.Scale = windowScale
 	end
 	rescale()
 	local function watchCamera()
@@ -170,9 +171,9 @@ function Hud.start()
 		local gained = target > shownMoney.Value
 		tween(shownMoney, 0.5, { Value = target })
 		if gained then
-			tween(hud.moneyScale, 0.1, { Scale = screenScale * 1.12 })
+			tween(hud.moneyScale, 0.1, { Scale = hudScale * 1.12 })
 			task.delay(0.12, function()
-				tween(hud.moneyScale, 0.25, { Scale = screenScale }, Enum.EasingStyle.Back)
+				tween(hud.moneyScale, 0.25, { Scale = hudScale }, Enum.EasingStyle.Back)
 			end)
 		end
 		refreshRows()
@@ -210,10 +211,10 @@ function Hud.start()
 		if value then
 			refreshRows()
 			window.root.Visible = true
-			window.scale.Scale = screenScale * 0.8
-			tween(window.scale, 0.25, { Scale = screenScale }, Enum.EasingStyle.Back)
+			window.scale.Scale = windowScale * 0.8
+			tween(window.scale, 0.25, { Scale = windowScale }, Enum.EasingStyle.Back)
 		else
-			tween(window.scale, 0.12, { Scale = screenScale * 0.8 })
+			tween(window.scale, 0.12, { Scale = windowScale * 0.8 })
 			task.delay(0.12, function()
 				if not open then
 					window.root.Visible = false
@@ -232,11 +233,11 @@ function Hud.start()
 	bindPress(hud.sellButton, function()
 		local result = sellRemote:InvokeServer()
 		if typeof(result) == "table" and result.ok and typeof(result.amount) == "number" then
-			popup(hud.popups, "+" .. Format.short(result.amount), UDim2.new(1, -140 * screenScale, 0, 110 * screenScale), POPUP_COLORS.gain, POPUP_COLORS.gainEdge)
+			popup(hud.popups, "+" .. Format.short(result.amount), UDim2.new(1, -110 * hudScale, 0, 120 * hudScale), POPUP_COLORS.gain, POPUP_COLORS.gainEdge)
 		elseif typeof(result) == "table" and result.reason == "empty" then
 			shake(hud.sellButton)
-			local below = (HudView.BAR_TOP + HudView.BAR_SIZE.Y + 22) * screenScale
-			popup(hud.popups, "NO SNOW YET!", UDim2.new(0.5, HudView.SELL_OFFSET * screenScale, 0, below), POPUP_COLORS.error, POPUP_COLORS.errorEdge)
+			local below = (HudView.BAR_TOP + HudView.BAR_SIZE.Y + 22) * hudScale
+			popup(hud.popups, "NO SNOW YET!", UDim2.new(0.5, HudView.SELL_OFFSET * hudScale, 0, below), POPUP_COLORS.error, POPUP_COLORS.errorEdge)
 		end
 	end)
 
