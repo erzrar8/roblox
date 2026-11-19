@@ -23,6 +23,7 @@ Builder.Palette = {
 	TileDark = Color3.fromRGB(140, 156, 182),
 	Trunk = Color3.fromRGB(92, 82, 54),
 	Rock = Color3.fromRGB(128, 136, 150),
+	Cliff = Color3.fromRGB(108, 116, 134),
 	Ice = Color3.fromRGB(166, 214, 246),
 	IceDark = Color3.fromRGB(128, 188, 232),
 	LampPost = Color3.fromRGB(58, 64, 80),
