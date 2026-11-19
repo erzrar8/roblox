@@ -21,14 +21,16 @@ local block, box, container = Builder.block, Builder.box, Builder.container
 
 local VOXEL = 4
 -- Elongated rounded-rectangle island (radii in cells), centred slightly towards -Z.
-local ISLAND_RX, ISLAND_RZ, ISLAND_CZ = 24.5, 33.5, -4
--- Ring of mountains around the island, so a zoomed-out camera sees peaks instead of the void.
-local MOUNTAIN_BAND = 14
-local GRID_MIN_X, GRID_MAX_X = -40, 39
-local GRID_MIN_Z, GRID_MAX_Z = -52, 44
+local ISLAND_RX, ISLAND_RZ, ISLAND_CZ = 34.5, 48.5, -6
+-- Ring of snowy terraced mountains around the island, so a zoomed-out camera never sees the void.
+local MOUNTAIN_BAND = 12
+local GRID_MIN_X, GRID_MAX_X = -48, 47
+local GRID_MIN_Z, GRID_MAX_Z = -68, 56
 local ISLAND_BOTTOM = -12
 local CAP = 1.5
-local MOUNTAIN_CAP = 3
+-- Snow plain below the mountain tops, filling the view past the mountains out to the haze.
+local PLAIN_TOP = 16
+local BOUNDARY_HEIGHT = 120
 local TILE_HEIGHT = 0.4
 local SEED = 2026
 
@@ -37,16 +39,16 @@ type Cell = { h: number, kind: string }
 type Cells = { [number]: { [number]: Cell } }
 
 -- Layout, in grid cells.
-local PLAZA: Area = { x0 = -7, x1 = 6, z0 = 10, z1 = 25 }
-local FIELD: Area = { x0 = -16, x1 = 15, z0 = -29, z1 = -8 }
-local STATUE_AREA: Area = { x0 = 9, x1 = 14, z0 = 14, z1 = 19 }
-local PATH_Z0, PATH_Z1 = -7, 9
-local CANYON_START, CANYON_END = -38, -45
+local PLAZA: Area = { x0 = -10, x1 = 9, z0 = 12, z1 = 33 }
+local FIELD: Area = { x0 = -24, x1 = 23, z0 = -46, z1 = -8 }
+local STATUE_AREA: Area = { x0 = 13, x1 = 18, z0 = 20, z1 = 25 }
+local PATH_Z0, PATH_Z1 = FIELD.z1 + 1, PLAZA.z0 - 1
+local CANYON_START, CANYON_END = -54, -62
 
 -- Layout, in studs.
-local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 72)
-local SPAWN_COUNT, SPAWN_RADIUS = 8, 22
-local STATUE_CENTER = Vector3.new(48, 13, 68)
+local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 92)
+local SPAWN_COUNT, SPAWN_RADIUS = 8, 24
+local STATUE_CENTER = Vector3.new(64, 13, 92)
 
 local function inArea(area: Area, x: number, z: number, margin: number?): boolean
 	local m = margin or 0
@@ -140,9 +142,11 @@ local function buildHeightmap(): Cells
 			if depth and isCanyon(x, z) then
 				cells[x][z] = { h = 0, kind = if isNorthPath(x, z) then "stone" else "snow" }
 			elseif depth then
-				-- Rises outwards from a 32+ stud cliff; even levels keep every step taller than a jump.
-				local h = 8 + depth * 1.2 + peak(x, z) * 6
-				cells[x][z] = { h = 2 * math.floor(h / 2), kind = "mountain" }
+				-- Same terraces as the island rim, rising outwards from 2-3 levels to about 12.
+				local h = 2 + depth * 0.6 + peak(x, z) * 3.5
+				cells[x][z] = { h = math.floor(h), kind = "mountain" }
+			elseif d > 1 then
+				cells[x][z] = { h = PLAIN_TOP // VOXEL, kind = "plain" }
 			elseif d <= 1 then
 				local n = noise(x, z)
 				local h
@@ -182,6 +186,7 @@ local GROUND_TOP = {
 	field = { color = Palette.FieldSnow, name = "FieldSnow" },
 	stone = { color = Palette.Grout, name = "Grout" },
 	mountain = { color = Palette.Snow, name = "MountainSnow" },
+	plain = { color = Palette.Snow, name = "PlainSnow" },
 }
 
 local function buildGround(parent: any, cells: Cells)
@@ -197,11 +202,56 @@ local function buildGround(parent: any, cells: Cells)
 		local x0, x1 = rect.x0 * VOXEL, (rect.x1 + 1) * VOXEL
 		local z0, z1 = rect.z0 * VOXEL, (rect.z1 + 1) * VOXEL
 		local surface = GROUND_TOP[cell.kind]
-		local isMountain = cell.kind == "mountain"
-		local cap = if isMountain then MOUNTAIN_CAP else CAP
-		local body = if isMountain then { color = Palette.Cliff, name = "Cliff" } else { color = Palette.Dirt, name = "Dirt" }
-		box(parent, Vector3.new(x0, ISLAND_BOTTOM, z0), Vector3.new(x1, top - cap, z1), body.color, { name = body.name })
-		box(parent, Vector3.new(x0, top - cap, z0), Vector3.new(x1, top, z1), surface.color, { name = surface.name })
+		box(parent, Vector3.new(x0, ISLAND_BOTTOM, z0), Vector3.new(x1, top - CAP, z1), Palette.Dirt, { name = "Dirt" })
+		box(parent, Vector3.new(x0, top - CAP, z0), Vector3.new(x1, top, z1), surface.color, { name = surface.name })
+	end
+
+	-- Extend the plain from the grid edges outwards; it must never cover the grid itself.
+	local gx0, gx1 = GRID_MIN_X * VOXEL, (GRID_MAX_X + 1) * VOXEL
+	local gz0, gz1 = GRID_MIN_Z * VOXEL, (GRID_MAX_Z + 1) * VOXEL
+	local far = 1024
+	local bottom, top = PLAIN_TOP - 8, PLAIN_TOP
+	for _, rect in {
+		{ Vector3.new(-far, bottom, -far), Vector3.new(far, top, gz0) },
+		{ Vector3.new(-far, bottom, gz1), Vector3.new(far, top, far) },
+		{ Vector3.new(-far, bottom, gz0), Vector3.new(gx0, top, gz1) },
+		{ Vector3.new(gx1, bottom, gz0), Vector3.new(far, top, gz1) },
+	} do
+		local plain = box(parent, rect[1], rect[2], Palette.Snow, { name = "SnowPlain", studs = false })
+		plain.CastShadow = false
+	end
+end
+
+-- The mountains are climbable terraces, so invisible walls stand on every mountain cell bordering the
+-- playable area (island and canyon). Transparent parts do not block the default camera.
+local function buildBoundary(parent: any, cells: Cells)
+	local function isMountain(x: number, z: number): boolean
+		local cell = cells[x] and cells[x][z]
+		return cell ~= nil and (cell.kind == "mountain" or cell.kind == "plain")
+	end
+	local function keyAt(x: number, z: number): string?
+		if not isMountain(x, z) then
+			return nil
+		end
+		for _, offset in { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
+			local nx, nz = x + offset[1], z + offset[2]
+			if cells[nx] and cells[nx][nz] and not isMountain(nx, nz) then
+				return "wall"
+			end
+		end
+		return nil
+	end
+
+	for _, rect in Builder.greedyRects(GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, keyAt) do
+		local wall = box(
+			parent,
+			Vector3.new(rect.x0 * VOXEL, 0, rect.z0 * VOXEL),
+			Vector3.new((rect.x1 + 1) * VOXEL, BOUNDARY_HEIGHT, (rect.z1 + 1) * VOXEL),
+			Palette.Snow,
+			{ name = "Boundary", transparency = 1, studs = false }
+		)
+		wall.CastShadow = false
+		wall.CanQuery = false
 	end
 end
 
@@ -601,9 +651,9 @@ local function buildDecorations(parent: any, cells: Cells)
 			or isCorridor(x, z)
 	end
 
-	local function isFree(x: number, z: number, radius: number): boolean
+	local function isFree(x: number, z: number, radius: number, kind: string): boolean
 		local cell = cells[x] and cells[x][z]
-		if not cell or cell.kind ~= "snow" then
+		if not cell or cell.kind ~= kind then
 			return false
 		end
 		local margin = math.ceil(radius)
@@ -622,12 +672,12 @@ local function buildDecorations(parent: any, cells: Cells)
 		return true
 	end
 
-	local function place(count: number, radius: number, build: (x: number, z: number, ground: number) -> ())
+	local function place(count: number, radius: number, build: (x: number, z: number, ground: number) -> (), kind: string?)
 		local placed, attempts = 0, 0
-		while placed < count and attempts < 4000 do
+		while placed < count and attempts < 6000 do
 			attempts += 1
 			local x, z = rng.int(GRID_MIN_X, GRID_MAX_X), rng.int(GRID_MIN_Z, GRID_MAX_Z)
-			if isFree(x, z, radius) then
+			if isFree(x, z, radius, kind or "snow") then
 				table.insert(occupied, { x = x, z = z, r = radius })
 				build(x, z, cells[x][z].h * VOXEL)
 				placed += 1
@@ -636,9 +686,10 @@ local function buildDecorations(parent: any, cells: Cells)
 	end
 
 	-- Hand-placed snowmen: two watching the fountain, two flanking the field entrance.
+	local plazaWest = PLAZA.x0 * VOXEL - 12
 	local snowmen = {
-		{ position = Vector3.new(-40, 0, 58), lookAt = FOUNTAIN_CENTER },
-		{ position = Vector3.new(-40, 0, 86), lookAt = FOUNTAIN_CENTER },
+		{ position = Vector3.new(plazaWest, 0, FOUNTAIN_CENTER.Z - 16), lookAt = FOUNTAIN_CENTER },
+		{ position = Vector3.new(plazaWest, 0, FOUNTAIN_CENTER.Z + 16), lookAt = FOUNTAIN_CENTER },
 		{ position = Vector3.new(-22, 0, -18), lookAt = Vector3.new(0, 0, 0) },
 		{ position = Vector3.new(22, 0, -18), lookAt = Vector3.new(0, 0, 0) },
 	}
@@ -650,12 +701,15 @@ local function buildDecorations(parent: any, cells: Cells)
 	end
 
 	local trees = container("Folder", "Trees", parent)
-	place(34, 2.5, function(x, z, ground)
+	place(48, 2.5, function(x, z, ground)
 		buildTree(trees, cellCenter(x, z, ground), rng.range(1.1, 1.6), rng)
 	end)
+	place(40, 2.5, function(x, z, ground)
+		buildTree(trees, cellCenter(x, z, ground), rng.range(1.2, 1.8), rng)
+	end, "mountain")
 
 	local props = container("Folder", "Props", parent)
-	place(22, 1, function(x, z, ground)
+	place(30, 1, function(x, z, ground)
 		local base = cellCenter(x, z, ground)
 		for _ = 1, rng.int(2, 4) do
 			local width = rng.int(2, 4)
@@ -667,7 +721,7 @@ local function buildDecorations(parent: any, cells: Cells)
 		end
 	end)
 
-	place(12, 1, function(x, z, ground)
+	place(16, 1, function(x, z, ground)
 		local base = cellCenter(x, z, ground)
 		for _ = 1, rng.int(1, 3) do
 			local width = rng.range(2, 3.5)
@@ -680,7 +734,7 @@ local function buildDecorations(parent: any, cells: Cells)
 		end
 	end)
 
-	place(10, 1, function(x, z, ground)
+	place(14, 1, function(x, z, ground)
 		local base = cellCenter(x, z, ground)
 		for _ = 1, rng.int(2, 3) do
 			local height = rng.range(3, 6.5)
@@ -702,13 +756,14 @@ function Spawn.build(): any
 	local cells = buildHeightmap()
 
 	buildGround(container("Folder", "Ground", model), cells)
+	buildBoundary(container("Folder", "Boundary", model), cells)
 	buildTiles(container("Folder", "Plaza", model))
 	buildSpawnPoints(model)
 	buildFrozenFountain(model)
 
 	local benches = container("Folder", "Benches", model)
-	for _, x in { -20, 20 } do
-		for _, z in { 62, 82 } do
+	for _, x in { -30, 30 } do
+		for _, z in { FOUNTAIN_CENTER.Z - 12, FOUNTAIN_CENTER.Z + 12 } do
 			local base = Vector3.new(x, TILE_HEIGHT, z)
 			buildBench(benches, base, Vector3.new(-x, 0, 0).Unit)
 		end
@@ -721,7 +776,7 @@ function Spawn.build(): any
 			buildLamp(lamps, Vector3.new(x, TILE_HEIGHT, z))
 		end
 	end
-	for _, z in { 6, 2, -2 } do
+	for _, z in { 8, 3, -2 } do
 		local c = pathCenter(z)
 		buildLamp(lamps, Vector3.new((c - 2) * VOXEL - 2, 0, z * VOXEL + 2))
 		buildLamp(lamps, Vector3.new((c + 2) * VOXEL + 2, 0, z * VOXEL + 2))
