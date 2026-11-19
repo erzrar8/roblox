@@ -1,1 +1,3 @@
-print("Hello world, from server!")
+local MapCleanup = require(script.MapCleanup)
+
+MapCleanup.run()

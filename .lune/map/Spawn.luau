@@ -1,5 +1,5 @@
 --!strict
--- Spawn island: tiled plaza with a frozen fountain next to the SpawnLocation, a winding path to the
+-- Spawn island: tiled plaza with invisible spawn points around a frozen fountain, a winding path to the
 -- fenced snow field where players roll their snowballs, and a bridge from the field to the (not yet
 -- built) Zone 1 gate.
 --
@@ -42,7 +42,7 @@ local BRIDGE_START, BRIDGE_END = -38, -45
 
 -- Layout, in studs.
 local FOUNTAIN_CENTER = Vector3.new(0, TILE_HEIGHT, 72)
-local SPAWN_Z = 92
+local SPAWN_COUNT, SPAWN_RADIUS = 8, 22
 local STATUE_CENTER = Vector3.new(48, 13, 68)
 
 local function inArea(area: Area, x: number, z: number, margin: number?): boolean
@@ -196,20 +196,27 @@ local function buildTiles(parent: any)
 	end
 end
 
-local function buildSpawnLocation(parent: any)
-	local spawn = Instance.new("SpawnLocation")
-	spawn.Name = "SpawnLocation"
-	spawn.Anchored = true
-	spawn.Size = Vector3.new(8, 0.6, 8)
-	-- Identity rotation: players spawn looking down -Z, at the fountain and the path behind it.
-	spawn.CFrame = CFrame.new(0, TILE_HEIGHT + 0.3, SPAWN_Z)
-	spawn.Color = Palette.Spawn
-	spawn.Material = Enum.Material.Plastic
-	spawn.TopSurface = Enum.SurfaceType.Studs
-	spawn.Neutral = true
-	spawn.Duration = 0
-	spawn.AllowTeamChangeOnTouch = false
-	spawn.Parent = parent
+-- Invisible spawn points in a ring around the fountain; Roblox picks one at random per spawn.
+local function buildSpawnPoints(parent: any)
+	local folder = container("Folder", "SpawnPoints", parent)
+	for i = 0, SPAWN_COUNT - 1 do
+		local angle = i * 2 * math.pi / SPAWN_COUNT
+		local position = FOUNTAIN_CENTER + Vector3.new(math.sin(angle) * SPAWN_RADIUS, 0.5, math.cos(angle) * SPAWN_RADIUS)
+		local spawn = Instance.new("SpawnLocation")
+		spawn.Name = `SpawnPoint{i + 1}`
+		spawn.Anchored = true
+		spawn.Size = Vector3.new(6, 1, 6)
+		-- Identity rotation: players spawn looking down -Z, towards the path and the snow field.
+		spawn.CFrame = CFrame.new(position)
+		spawn.Transparency = 1
+		spawn.CanCollide = false
+		spawn.CanQuery = false
+		spawn.CastShadow = false
+		spawn.Neutral = true
+		spawn.Duration = 0
+		spawn.AllowTeamChangeOnTouch = false
+		spawn.Parent = folder
+	end
 end
 
 -- Voxel disc (or ring when rInner > 0) centred on `center`, merged into one part per row/segment.
@@ -649,7 +656,7 @@ function Spawn.build(): any
 
 	buildGround(container("Folder", "Ground", model), cells)
 	buildTiles(container("Folder", "Plaza", model))
-	buildSpawnLocation(model)
+	buildSpawnPoints(model)
 	buildFrozenFountain(model)
 
 	local benches = container("Folder", "Benches", model)
