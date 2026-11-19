@@ -147,7 +147,7 @@ local function updatePose(visual: Visual, dt: number)
 		diameter = visual.shown,
 		center = center,
 		moving = math.clamp(visual.speed / FULL_SPEED, 0, 1),
-		time = os.clock(),
+		dt = dt,
 	})
 end
 
