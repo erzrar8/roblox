@@ -32,6 +32,7 @@ local CAP = 1.5
 local PLAIN_TOP = 16
 local BOUNDARY_HEIGHT = 120
 local TILE_HEIGHT = 0.4
+local FRESH_SNOW_DEPTH = 1
 local SEED = 2026
 
 type Area = { x0: number, x1: number, z0: number, z1: number }
@@ -184,7 +185,7 @@ end
 
 local GROUND_TOP = {
 	snow = { color = Palette.Snow, name = "Snow" },
-	field = { color = Palette.FieldSnow, name = "FieldSnow" },
+	field = { color = Palette.PackedSnow, name = "FieldSnow" },
 	stone = { color = Palette.Grout, name = "Grout" },
 	mountain = { color = Palette.Snow, name = "MountainSnow" },
 	plain = { color = Palette.Snow, name = "PlainSnow" },
@@ -523,8 +524,27 @@ local function buildSnowField(parent: any)
 	fenceRun(Vector3.new(x1, 0, z0), Vector3.new(x1, 0, z1))
 end
 
--- Invisible volumes read by the client (ZoneBanner) to show which zone the player is in.
--- Persistent so they replicate even when StreamingEnabled is on and the player is far away.
+-- Fresh snow over the snow field, one tile per cell. The server (SnowLayer) hides the tiles a snowball
+-- rolls over and grows them back later. Tiles do not collide, so feet and balls sink into the snow.
+local function buildFreshSnow(parent: any)
+	local layer = container("Model", "FreshSnow", parent)
+	for x = FIELD.x0, FIELD.x1 do
+		for z = FIELD.z0, FIELD.z1 do
+			local tile = block(
+				layer,
+				Vector3.new(VOXEL, FRESH_SNOW_DEPTH, VOXEL),
+				CFrame.new(cellCenter(x, z, FRESH_SNOW_DEPTH / 2)),
+				Palette.FreshSnow,
+				{ name = "FreshSnow", canCollide = false }
+			)
+			tile.CanQuery = false
+			tile.CanTouch = false
+		end
+	end
+end
+
+-- Invisible volumes read by the client (ZoneBanner) and the server (SnowballService) to know which
+-- zone a player is in. Persistent so they replicate even when StreamingEnabled is on.
 local function buildZones(parent: any)
 	local zones = container("Model", "Zones", parent)
 	zones.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
@@ -965,6 +985,7 @@ function Spawn.build(): any
 	end
 
 	buildSnowField(model)
+	buildFreshSnow(model)
 	buildZones(model)
 	buildGate(model)
 	buildSnowballStatue(model)

@@ -2,8 +2,10 @@
 -- Tracks which zone volume (a part with a "ZoneName" attribute) the local character stands in and
 -- shows the zone banner whenever the player reaches a different zone than the last one shown.
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Zones = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Zones"))
 local ZoneBanner = require(script.Parent.ZoneBanner)
 
 local CHECK_INTERVAL = 0.2
@@ -18,11 +20,7 @@ local function track(instance: Instance)
 	end
 end
 
-local function contains(zone: BasePart, position: Vector3): boolean
-	local relative = zone.CFrame:PointToObjectSpace(position)
-	local half = zone.Size / 2
-	return math.abs(relative.X) <= half.X and math.abs(relative.Y) <= half.Y and math.abs(relative.Z) <= half.Z
-end
+local contains = Zones.contains
 
 -- Smallest volume wins, so a zone nested inside a bigger one takes priority.
 local function zoneAt(position: Vector3): BasePart?
