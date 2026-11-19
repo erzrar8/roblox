@@ -1,6 +1,7 @@
 --!strict
 -- Money, selling snowballs and buying upgrades. Clients call the RemoteFunctions in
--- ReplicatedStorage.Remotes; everything is checked here on the server.
+-- ReplicatedStorage.Remotes; everything is checked here on the server. Remotes.Notify sends short
+-- messages for the client to show (unlocks, elf missions).
 --
 -- Player attributes: Money (coins), Upgrade_<id> (level of each upgrade, see Shared.Upgrades).
 local Players = game:GetService("Players")
@@ -14,10 +15,16 @@ local SnowballService = require(script.Parent.SnowballService)
 local REQUEST_COOLDOWN = 0.25
 
 export type Result = { ok: boolean, amount: number?, level: number?, reason: string? }
+-- Called with (player, ball diameter, coins earned) after every sale.
+export type SoldListener = (Player, number, number) -> ()
+-- How a client shows a notification: "good" (gold), "bad" (red) or "info" (white).
+export type NotifyKind = "good" | "bad" | "info"
 
 local EconomyService = {}
 
 local lastRequest: { [Player]: number } = {}
+local soldListeners: { SoldListener } = {}
+local notifyRemote: RemoteEvent
 
 local function setup(player: Player)
 	if player:GetAttribute("Money") == nil then
@@ -45,16 +52,48 @@ local function money(player: Player): number
 	return if typeof(value) == "number" then value else 0
 end
 
+function EconomyService.money(player: Player): number
+	return money(player)
+end
+
+function EconomyService.addMoney(player: Player, amount: number)
+	player:SetAttribute("Money", money(player) + math.max(math.floor(amount), 0))
+end
+
+-- Takes `amount` coins if the player has them.
+function EconomyService.trySpend(player: Player, amount: number): boolean
+	local balance = money(player)
+	if balance < amount then
+		return false
+	end
+	player:SetAttribute("Money", balance - amount)
+	return true
+end
+
+function EconomyService.notify(player: Player, text: string, kind: NotifyKind?)
+	if notifyRemote then
+		notifyRemote:FireClient(player, text, kind or "info")
+	end
+end
+
+function EconomyService.onSold(listener: SoldListener)
+	table.insert(soldListeners, listener)
+end
+
 function EconomyService.sell(player: Player): Result
 	if throttled(player) then
 		return { ok = false, reason = "busy" }
 	end
-	local amount = Config.sellValue(SnowballService.collectedSnow(player), Upgrades.valueFor(player, "CashMultiplier"))
+	local amount = Config.sellValue(SnowballService.collectedValue(player), Upgrades.valueFor(player, "CashMultiplier"))
 	if amount <= 0 then
 		return { ok = false, reason = "empty" }
 	end
+	local diameter = SnowballService.diameter(player)
 	SnowballService.reset(player)
-	player:SetAttribute("Money", money(player) + amount)
+	EconomyService.addMoney(player, amount)
+	for _, listener in soldListeners do
+		task.spawn(listener, player, diameter, amount)
+	end
 	return { ok = true, amount = amount }
 end
 
@@ -94,6 +133,9 @@ function EconomyService.start()
 		return EconomyService.buyUpgrade(player, id)
 	end
 	buy.Parent = remotes
+	notifyRemote = Instance.new("RemoteEvent")
+	notifyRemote.Name = "Notify"
+	notifyRemote.Parent = remotes
 	remotes.Parent = ReplicatedStorage
 
 	Players.PlayerAdded:Connect(setup)

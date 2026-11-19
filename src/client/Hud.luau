@@ -11,9 +11,11 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Format = require(Shared:WaitForChild("Format"))
 local Upgrades = require(Shared:WaitForChild("Upgrades"))
+local Missions = require(Shared:WaitForChild("Missions"))
 local Kit = require(script.Parent.Ui.Kit)
 local HudView = require(script.Parent.Ui.HudView)
 local UpgradesView = require(script.Parent.Ui.UpgradesView)
+local MissionView = require(script.Parent.Ui.MissionView)
 
 local DESIGN_SIZE = Vector2.new(1100, 640) -- below this viewport size the HUD scales down
 local MIN_SCALE = 0.55
@@ -23,6 +25,8 @@ local POPUP_COLORS = {
 	gainEdge = Color3.fromRGB(110, 70, 0),
 	error = Color3.fromRGB(255, 110, 110),
 	errorEdge = Color3.fromRGB(90, 8, 14),
+	info = Color3.fromRGB(255, 255, 255),
+	infoEdge = Color3.fromRGB(22, 52, 104),
 }
 
 local Hud = {}
@@ -94,6 +98,7 @@ function Hud.start()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local sellRemote = remotes:WaitForChild("Sell") :: RemoteFunction
 	local buyRemote = remotes:WaitForChild("BuyUpgrade") :: RemoteFunction
+	local notifyRemote = remotes:WaitForChild("Notify") :: RemoteEvent
 
 	-- The default player list sits in the top-right corner, right where the money counter goes.
 	pcall(function()
@@ -113,6 +118,7 @@ function Hud.start()
 		table.insert(specs, { id = definition.id, name = definition.name, icon = definition.icon })
 	end
 	local window = UpgradesView.build(gui, specs)
+	local tracker = MissionView.build(gui)
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	-- Scale everything down on small screens.
@@ -124,6 +130,7 @@ function Hud.start()
 		hudScale, windowScale = HudView.SCALE * screen, UpgradesView.SCALE * screen
 		hud.topScale.Scale = hudScale
 		hud.moneyScale.Scale = hudScale
+		tracker.scale.Scale = hudScale
 		window.scale.Scale = windowScale
 	end
 	rescale()
@@ -240,6 +247,91 @@ function Hud.start()
 			popup(hud.popups, "NO SNOW YET!", UDim2.new(0.5, HudView.SELL_OFFSET * hudScale, 0, below), POPUP_COLORS.error, POPUP_COLORS.errorEdge)
 		end
 	end)
+
+	-- Messages from the server (unlocks, elf tasks), shown big in the middle of the screen. A new one
+	-- replaces the one on screen.
+	local current: TextLabel? = nil
+	notifyRemote.OnClientEvent:Connect(function(text: unknown, kind: unknown)
+		if typeof(text) ~= "string" then
+			return
+		end
+		if current then
+			current:Destroy()
+		end
+		local color, edge = POPUP_COLORS.info, POPUP_COLORS.infoEdge
+		if kind == "good" then
+			color, edge = POPUP_COLORS.gain, POPUP_COLORS.gainEdge
+		elseif kind == "bad" then
+			color, edge = POPUP_COLORS.error, POPUP_COLORS.errorEdge
+		end
+		local label = Kit.label(hud.popups, {
+			name = "Toast",
+			text = text,
+			position = UDim2.fromScale(0.5, 0.3),
+			anchor = Vector2.new(0.5, 0.5),
+			size = UDim2.new(0.9, 0, 0, 40),
+			color = color,
+			stroke = edge,
+			strokeThickness = 3,
+			maxTextSize = math.floor(30 * hudScale / HudView.SCALE),
+			zIndex = 21,
+		})
+		current = label
+		local scale = Kit.make("UIScale", { Scale = 0.6 }, label)
+		tween(scale, 0.25, { Scale = 1 }, Enum.EasingStyle.Back)
+		task.delay(2.2, function()
+			if label.Parent then
+				local stroke = label:FindFirstChildOfClass("UIStroke")
+				tween(label, 0.4, { TextTransparency = 1, Position = UDim2.new(0.5, 0, 0.3, -24) })
+				if stroke then
+					tween(stroke, 0.4, { Transparency = 1 })
+				end
+				task.delay(0.45, function()
+					label:Destroy()
+				end)
+			end
+		end)
+	end)
+
+	-- Elf task tracker.
+	local trackerShown = false
+	local function refreshTracker()
+		local elfId = Missions.activeElf(player)
+		if not elfId then
+			if trackerShown then
+				trackerShown = false
+				tween(tracker.scale, 0.15, { Scale = 0 })
+				task.delay(0.16, function()
+					if not trackerShown then
+						tracker.root.Visible = false
+					end
+				end)
+			end
+			return
+		end
+		local goal, progress = player:GetAttribute("MissionGoal"), player:GetAttribute("MissionProgress")
+		local text = player:GetAttribute("MissionText")
+		local g = if typeof(goal) == "number" then goal else 1
+		local p = if typeof(progress) == "number" then progress else 0
+		local elf = Missions.byId[elfId]
+		MissionView.set(tracker, {
+			elf = if elf then elf.name else elfId,
+			text = if typeof(text) == "string" then text else "",
+			progress = p / math.max(g, 1),
+			count = if g > 1 then `{Format.short(p)}/{Format.short(g)}` else `{p}/{g}`,
+			done = p >= g,
+		})
+		if not trackerShown then
+			trackerShown = true
+			tracker.root.Visible = true
+			tracker.scale.Scale = 0
+			tween(tracker.scale, 0.3, { Scale = hudScale }, Enum.EasingStyle.Back)
+		end
+	end
+	for _, attribute in { "MissionElf", "MissionText", "MissionGoal", "MissionProgress" } do
+		player:GetAttributeChangedSignal(attribute):Connect(refreshTracker)
+	end
+	refreshTracker()
 
 	-- Twinkling lights.
 	task.spawn(function()
