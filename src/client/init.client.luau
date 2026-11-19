@@ -1,1 +1,3 @@
-print("Hello world, from client!")
+local SnowFall = require(script.SnowFall)
+
+SnowFall.start()
