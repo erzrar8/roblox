@@ -1,7 +1,6 @@
 ---
 name: folk-stud-ui
-description: >-
-  Build and tune Roblox menus in the Folk Stud UI style, a white studded sheet with no title bar, thick black outlines, burning vivid colours, spinning light rays and chunky animated buttons, with a ready left rail HUD, shop, quests, backpack, index, settings and rebirth windows that work right after install. Use this whenever someone asks for a stud UI, a "steal a" style menu, a simulator shop, crate or egg shop, quest tab, daily or weekly quests, backpack or inventory, pet or item index, settings menu, rebirth window, HUD buttons on the left rail, or any cartoon Roblox menu in this look. Also use it when they want icons from the FOLK Icon Pack zip, or when they have added their own images to one of these menus and say things like "fix and adjust them", "tune the colours" or "make the background blurry", even if they never name the style.
+description: Build and tune Roblox menus in the Folk Stud UI style, a white studded sheet with no title bar, thick black outlines, burning vivid colours, spinning light rays and chunky animated buttons, with a ready left rail HUD, shop, quests, backpack, index, settings and rebirth windows that work right after install. Use this whenever someone asks for a stud UI, a "steal a" style menu, a simulator shop, crate or egg shop, quest tab, daily or weekly quests, backpack or inventory, pet or item index, settings menu, rebirth window, HUD buttons on the left rail, or any cartoon Roblox menu in this look. Also use it when they want icons from the FOLK Icon Pack zip, or when they have added their own images to one of these menus and say things like "fix and adjust them", "tune the colours" or "make the background blurry", even if they never name the style.
 ---
 
 # Folk Stud UI
