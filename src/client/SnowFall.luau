@@ -3,6 +3,8 @@
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local ClientSettings = require(script.Parent.ClientSettings)
+
 local AREA = 140
 local HEIGHT_ABOVE_CAMERA = 45
 
@@ -40,7 +42,14 @@ function SnowFall.start()
 	emitter.Acceleration = Vector3.new(1.5, 0, 0.8)
 	emitter.Rotation = NumberRange.new(0, 360)
 	emitter.RotSpeed = NumberRange.new(-40, 40)
+	emitter.Enabled = ClientSettings.get("Snowfall")
 	emitter.Parent = emitterPart
+	ClientSettings.onChanged("Snowfall", function(on)
+		emitter.Enabled = on
+		if not on then
+			emitter:Clear()
+		end
+	end)
 
 	emitterPart.Parent = camera
 

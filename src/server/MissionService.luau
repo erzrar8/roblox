@@ -1,7 +1,7 @@
 --!strict
 -- Elf missions (definitions in Shared.Missions). Each elf in the Elf Village gets a "Talk" prompt:
 -- talking with no task in progress takes that elf's next task, talking to the same elf again with the
--- task done hands it in for the reward. Progress comes from SnowballService (candy snow collected)
+-- task done hands it in for the reward (or CLAIM in the Elf Tasks window). Progress comes from SnowballService (candy snow collected)
 -- and EconomyService (sales).
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -48,6 +48,15 @@ local function progress(player: Player, kind: Missions.Kind, amount: number)
 	end
 end
 
+local function handIn(player: Player, elf: Missions.Elf)
+	local reward = player:GetAttribute("MissionReward")
+	local amount = if typeof(reward) == "number" then reward else 0
+	EconomyService.addMoney(player, amount)
+	player:SetAttribute("ElfLevel_" .. elf.id, Missions.level(player, elf.id) + 1)
+	clear(player)
+	EconomyService.notify(player, `THANKS! +{Format.short(amount)}`, "good")
+end
+
 local function talk(player: Player, elf: Missions.Elf)
 	local active = Missions.activeElf(player)
 	if not active then
@@ -55,18 +64,28 @@ local function talk(player: Player, elf: Missions.Elf)
 	elseif active ~= elf.id then
 		EconomyService.notify(player, `FINISH {string.upper(Missions.byId[active].name)}'S TASK FIRST!`, "bad")
 	elseif Missions.isDone(player) then
-		local reward = player:GetAttribute("MissionReward")
-		EconomyService.addMoney(player, if typeof(reward) == "number" then reward else 0)
-		player:SetAttribute("ElfLevel_" .. elf.id, Missions.level(player, elf.id) + 1)
-		clear(player)
-		EconomyService.notify(player, `THANKS! +{Format.short(if typeof(reward) == "number" then reward else 0)}`, "good")
+		handIn(player, elf)
 	else
 		local goal, current = player:GetAttribute("MissionGoal"), player:GetAttribute("MissionProgress")
 		EconomyService.notify(player, `KEEP GOING! {current}/{goal}`, "info")
 	end
 end
 
+-- CLAIM in the Elf Tasks window: hands in the player's finished task without walking back.
+local function claim(player: Player, elfId: unknown): { ok: boolean }
+	local elf = if typeof(elfId) == "string" then Missions.byId[elfId] else nil
+	if not elf or Missions.activeElf(player) ~= elf.id or not Missions.isDone(player) then
+		return { ok = false }
+	end
+	handIn(player, elf)
+	return { ok = true }
+end
+
 function MissionService.start()
+	local claimRemote = Instance.new("RemoteFunction")
+	claimRemote.Name = "ClaimMission"
+	claimRemote.OnServerInvoke = claim
+	claimRemote.Parent = ReplicatedStorage:WaitForChild("Remotes")
 	local elves = Workspace:WaitForChild("Map"):WaitForChild("Spawn"):WaitForChild("Village"):WaitForChild("Elves")
 	for _, model in elves:GetChildren() do
 		local id = model:GetAttribute("ElfId")

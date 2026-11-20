@@ -1,5 +1,5 @@
 --!strict
--- HUD behaviour: UPGRADES opens the upgrades window, SELL sells the snowball, and the money counter
+-- HUD behaviour: UPGRADES opens the Folk upgrades window (FolkMenus), SELL sells the snowball, and the money counter
 -- counts up with a twinkling string of Christmas lights. The server does all the maths
 -- (EconomyService); this only shows its results.
 local Players = game:GetService("Players")
@@ -10,11 +10,11 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Format = require(Shared:WaitForChild("Format"))
-local Upgrades = require(Shared:WaitForChild("Upgrades"))
 local Missions = require(Shared:WaitForChild("Missions"))
+local ClientSettings = require(script.Parent.ClientSettings)
+local FolkMenus = require(script.Parent.FolkMenus)
 local Kit = require(script.Parent.Ui.Kit)
 local HudView = require(script.Parent.Ui.HudView)
-local UpgradesView = require(script.Parent.Ui.UpgradesView)
 local MissionView = require(script.Parent.Ui.MissionView)
 
 local DESIGN_SIZE = Vector2.new(1100, 640) -- below this viewport size the HUD scales down
@@ -97,7 +97,6 @@ function Hud.start()
 	local player = Players.LocalPlayer :: Player
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local sellRemote = remotes:WaitForChild("Sell") :: RemoteFunction
-	local buyRemote = remotes:WaitForChild("BuyUpgrade") :: RemoteFunction
 	local notifyRemote = remotes:WaitForChild("Notify") :: RemoteEvent
 
 	-- The default player list sits in the top-right corner, right where the money counter goes.
@@ -113,25 +112,30 @@ function Hud.start()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}) :: ScreenGui
 	local hud = HudView.build(gui)
-	local specs: { UpgradesView.Spec } = {}
-	for _, definition in Upgrades.list do
-		table.insert(specs, { id = definition.id, name = definition.name, icon = definition.icon })
-	end
-	local window = UpgradesView.build(gui, specs)
 	local tracker = MissionView.build(gui)
-	gui.Parent = player:WaitForChild("PlayerGui")
+	local playerGui = player:WaitForChild("PlayerGui")
+	gui.Parent = playerGui
+	-- Toasts go in their own layer so they show above the Folk menu windows (DisplayOrder 40).
+	local toastLayer = Kit.make("ScreenGui", {
+		Name = "HudToasts",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		DisplayOrder = 50,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}) :: ScreenGui
+	hud.popups.Parent = toastLayer
+	toastLayer.Parent = playerGui
 
 	-- Scale everything down on small screens.
-	local hudScale, windowScale = HudView.SCALE, UpgradesView.SCALE
+	local hudScale = HudView.SCALE
 	local function rescale()
 		local camera = Workspace.CurrentCamera
 		local viewport = if camera then camera.ViewportSize else DESIGN_SIZE
 		local screen = math.clamp(math.min(viewport.X / DESIGN_SIZE.X, viewport.Y / DESIGN_SIZE.Y), MIN_SCALE, 1)
-		hudScale, windowScale = HudView.SCALE * screen, UpgradesView.SCALE * screen
+		hudScale = HudView.SCALE * screen
 		hud.topScale.Scale = hudScale
 		hud.moneyScale.Scale = hudScale
 		tracker.scale.Scale = hudScale
-		window.scale.Scale = windowScale
 	end
 	rescale()
 	local function watchCamera()
@@ -156,23 +160,6 @@ function Hud.start()
 		hud.moneyLabel.Text = Format.short(value)
 	end)
 
-	-- Upgrades window rows.
-	local function refreshRows()
-		local balance = money()
-		for _, definition in Upgrades.list do
-			local level = Upgrades.level(player, definition.id)
-			local cost = Upgrades.cost(definition.id, level)
-			UpgradesView.setRow(window.rows[definition.id], {
-				current = "Now: " .. definition.format(Upgrades.value(definition.id, level)),
-				price = Format.short(cost),
-				level = tostring(level),
-				affordable = balance >= cost,
-				maxed = level >= definition.maxLevel,
-			})
-		end
-	end
-	refreshRows()
-
 	player:GetAttributeChangedSignal("Money"):Connect(function()
 		local target = money()
 		local gained = target > shownMoney.Value
@@ -183,57 +170,11 @@ function Hud.start()
 				tween(hud.moneyScale, 0.25, { Scale = hudScale }, Enum.EasingStyle.Back)
 			end)
 		end
-		refreshRows()
 	end)
 
-	for _, definition in Upgrades.list do
-		local row = window.rows[definition.id]
-		player:GetAttributeChangedSignal(Upgrades.attribute(definition.id)):Connect(function()
-			refreshRows()
-			tween(row.levelBox.scale, 0.1, { Scale = 1.2 })
-			task.delay(0.12, function()
-				tween(row.levelBox.scale, 0.25, { Scale = 1 }, Enum.EasingStyle.Back)
-			end)
-		end)
-		bindPress(row.upgrade, function()
-			local level = Upgrades.level(player, definition.id)
-			if level >= definition.maxLevel or money() < Upgrades.cost(definition.id, level) then
-				shake(row.upgrade)
-				return
-			end
-			local result = buyRemote:InvokeServer(definition.id)
-			if typeof(result) ~= "table" or not result.ok then
-				shake(row.upgrade)
-			end
-		end)
-	end
-
-	-- Opening and closing the upgrades window.
-	local open = false
-	local function setOpen(value: boolean)
-		if open == value then
-			return
-		end
-		open = value
-		if value then
-			refreshRows()
-			window.root.Visible = true
-			window.scale.Scale = windowScale * 0.8
-			tween(window.scale, 0.25, { Scale = windowScale }, Enum.EasingStyle.Back)
-		else
-			tween(window.scale, 0.12, { Scale = windowScale * 0.8 })
-			task.delay(0.12, function()
-				if not open then
-					window.root.Visible = false
-				end
-			end)
-		end
-	end
+	-- The upgrades window is the Folk Stud one, also on the left rail.
 	bindPress(hud.upgradesButton, function()
-		setOpen(not open)
-	end)
-	bindPress(window.close, function()
-		setOpen(false)
+		FolkMenus.toggle("FolkUpgrades")
 	end)
 
 	-- Selling.
@@ -297,7 +238,7 @@ function Hud.start()
 	local trackerShown = false
 	local function refreshTracker()
 		local elfId = Missions.activeElf(player)
-		if not elfId then
+		if not elfId or not ClientSettings.get("TaskTracker") then
 			if trackerShown then
 				trackerShown = false
 				tween(tracker.scale, 0.15, { Scale = 0 })
@@ -331,6 +272,9 @@ function Hud.start()
 	for _, attribute in { "MissionElf", "MissionText", "MissionGoal", "MissionProgress" } do
 		player:GetAttributeChangedSignal(attribute):Connect(refreshTracker)
 	end
+	ClientSettings.onChanged("TaskTracker", function()
+		refreshTracker()
+	end)
 	refreshTracker()
 
 	-- Twinkling lights.
@@ -338,9 +282,6 @@ function Hud.start()
 		local phase = 0
 		while true do
 			blink(hud.moneyLights, phase)
-			if open then
-				blink(window.lights, phase)
-			end
 			phase = 1 - phase
 			task.wait(BLINK_INTERVAL)
 		end
