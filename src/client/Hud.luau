@@ -1,5 +1,5 @@
 --!strict
--- HUD behaviour: UPGRADES opens the Folk upgrades window (FolkMenus), SELL sells the snowball, and the money counter
+-- HUD behaviour: SELL sells the snowball, and the money counter
 -- counts up with a twinkling string of Christmas lights. The server does all the maths
 -- (EconomyService); this only shows its results.
 local Players = game:GetService("Players")
@@ -12,7 +12,6 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Format = require(Shared:WaitForChild("Format"))
 local Missions = require(Shared:WaitForChild("Missions"))
 local ClientSettings = require(script.Parent.ClientSettings)
-local FolkMenus = require(script.Parent.FolkMenus)
 local Kit = require(script.Parent.Ui.Kit)
 local HudView = require(script.Parent.Ui.HudView)
 local MissionView = require(script.Parent.Ui.MissionView)
@@ -170,11 +169,6 @@ function Hud.start()
 				tween(hud.moneyScale, 0.25, { Scale = hudScale }, Enum.EasingStyle.Back)
 			end)
 		end
-	end)
-
-	-- The upgrades window is the Folk Stud one, also on the left rail.
-	bindPress(hud.upgradesButton, function()
-		FolkMenus.toggle("FolkUpgrades")
 	end)
 
 	-- Selling.

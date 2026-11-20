@@ -1,29 +1,25 @@
 --!strict
--- Builds the always-visible HUD: the UPGRADES and SELL buttons at the top centre, and the festive money
--- counter in the top-right corner. Layout only; Hud.luau wires up the behaviour.
+-- Builds the always-visible HUD: the SELL button at the top centre and the festive money counter in the
+-- top-right corner (upgrades open from the Folk rail on the left). Layout only; Hud.luau wires up the behaviour.
 local Kit = require(script.Parent.Kit)
 
 local HudView = {}
 
--- Button row, in pixels before UI scaling, with no panel behind it. UPGRADES sits at the horizontal centre
--- of the screen with the smaller SELL button to its right.
-local PAD, GAP = 0, 12
-local UPGRADES_SIZE = Vector2.new(210, 54)
-local SELL_SIZE = Vector2.new(150, 44)
-local BAR_SIZE = Vector2.new(PAD + UPGRADES_SIZE.X + GAP + SELL_SIZE.X + PAD, PAD + UPGRADES_SIZE.Y + Kit.DEPTH + PAD)
+-- In pixels before UI scaling, with no panel behind it.
+local SELL_SIZE = Vector2.new(180, 52)
+local BAR_SIZE = Vector2.new(SELL_SIZE.X, SELL_SIZE.Y + Kit.DEPTH)
 HudView.BAR_TOP = 10
 -- The whole HUD is drawn at this size (times the small-screen factor).
 HudView.SCALE = 0.8
 HudView.BAR_SIZE = BAR_SIZE
 -- Horizontal offset of the SELL button's centre from the screen centre, for effects placed under it.
-HudView.SELL_OFFSET = UPGRADES_SIZE.X / 2 + GAP + SELL_SIZE.X / 2
+HudView.SELL_OFFSET = 0
 
 local MONEY_SIZE = Vector2.new(236, 64)
 
 export type Refs = {
 	topBar: Frame,
 	topScale: UIScale,
-	upgradesButton: Kit.Button,
 	sellButton: Kit.Button,
 	money: Frame,
 	moneyScale: UIScale,
@@ -33,33 +29,22 @@ export type Refs = {
 }
 
 function HudView.build(gui: ScreenGui): Refs
-	local upgradesCenter = PAD + UPGRADES_SIZE.X / 2
 	local topBar = Kit.make("Frame", {
 		Name = "TopBar",
 		BackgroundTransparency = 1,
-		-- Anchored on the UPGRADES button's centre, so it stays centred at any UI scale.
-		AnchorPoint = Vector2.new(upgradesCenter / BAR_SIZE.X, 0),
+		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, HudView.BAR_TOP),
 		Size = UDim2.fromOffset(BAR_SIZE.X, BAR_SIZE.Y),
 	}, gui)
 	local topScale = Kit.make("UIScale", {}, topBar)
 
-	local rowCenter = PAD + (UPGRADES_SIZE.Y + Kit.DEPTH) / 2
-	local upgradesButton = Kit.button(topBar, {
-		name = "Upgrades",
-		size = UPGRADES_SIZE,
-		position = UDim2.fromOffset(upgradesCenter, rowCenter),
-		scheme = Kit.Schemes.green,
-		text = "UPGRADES",
-		maxTextSize = 26,
-	})
 	local sellButton = Kit.button(topBar, {
 		name = "Sell",
 		size = SELL_SIZE,
-		position = UDim2.fromOffset(PAD + UPGRADES_SIZE.X + GAP + SELL_SIZE.X / 2, rowCenter),
+		position = UDim2.fromOffset(SELL_SIZE.X / 2, BAR_SIZE.Y / 2),
 		scheme = Kit.Schemes.red,
 		text = "SELL",
-		maxTextSize = 24,
+		maxTextSize = 28,
 	})
 
 	local money = Kit.make("Frame", {
@@ -103,7 +88,6 @@ function HudView.build(gui: ScreenGui): Refs
 	return {
 		topBar = topBar,
 		topScale = topScale,
-		upgradesButton = upgradesButton,
 		sellButton = sellButton,
 		money = money,
 		moneyScale = moneyScale,
